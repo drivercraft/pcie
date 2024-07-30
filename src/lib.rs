@@ -1,9 +1,13 @@
 #![no_std]
-mod root;
 
-#[derive(Clone, Copy)]
-pub struct PciAddress {
-    pub bus: usize,
-    pub device: usize,
-    pub function: usize,
-}
+extern crate alloc;
+mod chip;
+mod root;
+mod types;
+
+pub use chip::*;
+use root::RootComplex;
+pub use types::*;
+
+
+pub type RootGeneric = RootComplex<generic::Generic>;
