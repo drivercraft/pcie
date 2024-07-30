@@ -63,13 +63,22 @@ pub struct FunctionInfo {
     pub header_type: HeaderType,
 }
 
+impl FunctionInfo {
+    pub fn device_type(&self) -> DeviceType {
+        DeviceType::from((self.class, self.subclass))
+    }
+}
+
 impl Display for FunctionInfo {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let dt = DeviceType::from((self.class, self.subclass));
         write!(
             f,
             "{:?} {:#X}:{:#X} {:?}:{:?} ",
-            self.addr, self.vendor_id, self.device_id, self.header_type, dt
+            self.addr,
+            self.vendor_id,
+            self.device_id,
+            self.header_type,
+            self.device_type()
         )
     }
 }
