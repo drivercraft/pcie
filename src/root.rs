@@ -9,7 +9,7 @@ use crate::{
 };
 
 use alloc::vec::Vec;
-use log::{debug, trace};
+use log::{debug, trace, warn};
 
 const MAX_BUS: u8 = 255;
 const MAX_DEVICE: u8 = 31;
@@ -39,7 +39,8 @@ impl<C: Chip> RootComplex<C> {
             device: 0,
             function: 0,
             stack: Vec::new(),
-            is_search_bridge: true,
+            bus_iter: 0,
+            subordinate: 0,
         }
     }
 }
@@ -92,7 +93,8 @@ pub struct BusDeviceIterator<C: Chip> {
     device: u8,
     function: u8,
     stack: Vec<PciPciBridgeHeader>,
-    is_search_bridge: bool,
+    bus_iter: u8,
+    subordinate: u8,
 }
 
 impl<C: Chip> BusDeviceIterator<C> {
@@ -142,7 +144,6 @@ impl<C: Chip> BusDeviceIterator<C> {
                     Bar::Io { port } => debug!("  BAR {}: IO  port: {:X}", slot, port),
                 }
             }
-            fence(Ordering::Release);
             slot += 1;
         }
     }
@@ -158,33 +159,30 @@ impl<C: Chip> Iterator for BusDeviceIterator<C> {
                 self.device += 1;
             }
             if self.device > MAX_DEVICE {
-                if self.is_search_bridge {
-                    self.device = 0;
+                if let Some(parent) = self.stack.pop() {
+                    parent.set_subordinate_bus_number(self.bus_iter, self.access());
+                    self.bus = parent.address().bus();
+                    self.device = parent.address().device() + 1;
+                    self.function = 0;
+
+                    trace!(
+                        "{:?} Bridge set primary bus: {}, secondary bus: {}, subordinate bus: {}",
+                        parent.address(),
+                        parent.primary_bus_number(self.access()),
+                        parent.secondary_bus_number(self.access()),
+                        parent.subordinate_bus_number(self.access()),
+                    );
+
+                    continue;
                 } else {
-                    if let Some(parent) = self.stack.pop() {
-                        let sub = self.bus;
-                        self.bus = parent.address().bus();
-                        self.device = parent.address().device() + 1;
-                        self.function = 0;
-                        parent.set_subordinate_bus_number(sub, self.access());
-                        trace!("back to {:?}", parent.address());
-                    } else {
-                        debug!("none!");
-                        return None;
-                    }
+                    return None;
                 }
-                self.is_search_bridge ^= self.is_search_bridge;
             }
             let current = self.current();
             let header = PciHeader::new(current);
 
             let (vendor_id, device_id) = header.id(self.access());
-            trace!(
-                "addr: {:#?} vid {:#X}, did {:#X}",
-                current,
-                vendor_id,
-                device_id
-            );
+
             if vendor_id == 0xffff {
                 if current.function() == 0 {
                     self.device += 1;
@@ -208,24 +206,21 @@ impl<C: Chip> Iterator for BusDeviceIterator<C> {
                 revision,
                 header_type,
             };
-            trace!("header_type:{:?}", header_type);
+
             match header_type {
                 HeaderType::PciPciBridge => {
                     let bridge = PciPciBridgeHeader::from_header(header, self.access()).unwrap();
 
                     bridge.set_primary_bus_number(self.bus, self.access());
-                    bridge.set_secondary_bus_number((self.bus + 1) as _, self.access());
+
+                    self.bus_iter += 1;
+                    self.bus = self.bus_iter;
+                    bridge.set_secondary_bus_number(self.bus, self.access());
                     bridge.set_subordinate_bus_number(0xff, self.access());
 
-                    if self.is_search_bridge {
-                        self.device += 1;
-                        self.function = 0;
-                    } else {
-                        self.bus += 1;
-                        self.device = 0;
-                        self.function = 0;
-                        self.stack.push(bridge);
-                    }
+                    self.stack.push(bridge);
+                    self.device = 0;
+                    self.function = 0;
                 }
                 HeaderType::Endpoint => {
                     if current.function() == 0 && !multi {
@@ -233,14 +228,11 @@ impl<C: Chip> Iterator for BusDeviceIterator<C> {
                     } else {
                         self.function += 1;
                     }
-                    if self.is_search_bridge {
-                        continue;
-                    }
 
                     self.handle_ep(header);
                 }
                 _ => {
-                    debug!("no_header");
+                    warn!("not impl function");
                     if current.function() == 0 && !multi {
                         self.device += 1;
                     } else {

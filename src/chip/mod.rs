@@ -1,6 +1,6 @@
-use core::ptr::NonNull;
-
 use crate::{ConfigRegionAccess, PciAddress};
+use core::ptr::NonNull;
+pub use embedded_hal::delay::DelayNs;
 
 pub mod generic;
 pub trait Chip: ConfigRegionAccess + Clone {
