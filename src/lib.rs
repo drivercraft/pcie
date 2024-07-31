@@ -8,6 +8,6 @@ pub(crate) mod types;
 
 pub use chip::*;
 pub use device::*;
-use root::RootComplex;
+pub use root::RootComplex;
 
 pub type RootGeneric = RootComplex<generic::Generic>;

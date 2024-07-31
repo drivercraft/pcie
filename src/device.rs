@@ -8,11 +8,8 @@ use crate::types::{EndpointHeader, PciHeader, PciPciBridgeHeader};
 use crate::Chip;
 use derive_getters::Getters;
 
-#[derive(Getters)]
 pub struct PciDevice<C: Chip> {
-    #[getter(skip)]
     chip: C,
-    #[getter(skip)]
     header: PciHeader,
     /// The PCI vendor ID.
     vendor_id: u16,
@@ -61,8 +58,36 @@ impl<C: Chip> PciDevice<C> {
         }
     }
 
+    pub fn vendor_id(&self) -> u16 {
+        self.vendor_id
+    }
+
+    pub fn device_id(&self) -> u16 {
+        self.device_id
+    }
+
+    pub fn class(&self) -> u8 {
+        self.class
+    }
+
+    pub fn subclass(&self) -> u8 {
+        self.subclass
+    }
+
     pub fn address(&self) -> PciAddress {
         self.header.address()
+    }
+
+    pub fn interface(&self) -> u8 {
+        self.interface
+    }
+
+    pub fn revision(&self) -> u8 {
+        self.revision
+    }
+
+    pub fn kind<'a>(&'a self) -> &'a PciDeviceKind<C> {
+        &self.kind
     }
 
     pub fn device_type(&self) -> DeviceType {

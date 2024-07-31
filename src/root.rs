@@ -117,14 +117,19 @@ impl<C: Chip> Iterator for BusDeviceIterator<C> {
             }
             if self.device > MAX_DEVICE {
                 if let Some(parent) = self.stack.pop() {
-                    parent.set_subordinate_bus_number(self.bus_iter, self.access());
-                    self.bus = parent.address().bus();
-                    self.device = parent.address().device() + 1;
+                    // parent.set_subordinate_bus_number(self.bus_iter, self.access());
+                    parent.update_bus_number(self.access(), |mut bus| {
+                        bus.subordinate = self.bus_iter;
+                        bus
+                    });
+
+                    self.bus = parent.header().address().bus();
+                    self.device = parent.header().address().device() + 1;
                     self.function = 0;
 
                     trace!(
                         "{:?} Bridge set primary bus: {}, secondary bus: {}, subordinate bus: {}",
-                        parent.address(),
+                        parent.header().address(),
                         parent.primary_bus_number(self.access()),
                         parent.secondary_bus_number(self.access()),
                         parent.subordinate_bus_number(self.access()),
@@ -152,18 +157,16 @@ impl<C: Chip> Iterator for BusDeviceIterator<C> {
             let multi = header.has_multiple_functions(self.access());
             match device.kind() {
                 PciDeviceKind::PciPciBridge(bridge) => {
-                    bridge
-                        .header
-                        .set_primary_bus_number(self.bus, self.access());
                     self.bus_iter += 1;
+                    let primary = self.bus;
+                    let secondary = self.bus_iter;
+                    bridge.header.update_bus_number(self.access(), |mut bus| {
+                        bus.primary = primary;
+                        bus.secondary = secondary;
+                        bus.subordinate = 0xFF;
+                        bus
+                    });
                     self.bus = self.bus_iter;
-                    bridge
-                        .header
-                        .set_secondary_bus_number(self.bus, self.access());
-                    bridge
-                        .header
-                        .set_subordinate_bus_number(0xff, self.access());
-
                     self.stack
                         .push(PciPciBridgeHeader::from_header(header, self.access()).unwrap());
                     self.device = 0;

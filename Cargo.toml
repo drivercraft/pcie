@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 volatile = "0.6"
 log = "0.4"
-pci_types = "0.10"
+pci_types = { git = "https://github.com/ZR233/pci_types.git", branch = "set_bus" }
 tock-registers = "0.9"
 bit_field = "0.10"
 embedded-hal = "1.0"
