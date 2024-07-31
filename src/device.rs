@@ -99,7 +99,7 @@ impl<C: Chip> Display for PciDevice<C> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "{:?} {:#X}:{:#X} {:?} ",
+            "{:?} {:04X}:{:04X} {:?} ",
             self.header.address(),
             self.vendor_id,
             self.device_id,
