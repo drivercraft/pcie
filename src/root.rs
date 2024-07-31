@@ -4,12 +4,11 @@ use core::{
 };
 
 use crate::{
-    device_type::DeviceType, Bar, Chip, EndpointHeader, HeaderType, PciAddress, PciHeader,
-    PciPciBridgeHeader, PciPciBridgeHeaderWrite,
+    types::{device_type::DeviceType, *},
+    Chip, PciDevice, PciDeviceKind,
 };
-
 use alloc::vec::Vec;
-use log::{debug, trace, warn};
+use log::*;
 
 const MAX_BUS: u8 = 255;
 const MAX_DEVICE: u8 = 31;
@@ -105,52 +104,10 @@ impl<C: Chip> BusDeviceIterator<C> {
     fn current(&self) -> PciAddress {
         PciAddress::new(self.segment, self.bus, self.device, self.function)
     }
-
-    fn handle_ep(&mut self, header: PciHeader) {
-        let ep = EndpointHeader::from_header(header, self.access()).unwrap();
-        let mut slot = 0;
-        while slot < MAX_BARS {
-            if let Some(bar) = ep.bar(slot, self.access()) {
-                match bar {
-                    Bar::Memory32 {
-                        address,
-                        size,
-                        prefetchable,
-                    } => {
-                        debug!(
-                            "  BAR {}: MEM [{:#x}, {:#x}){}{}",
-                            slot,
-                            address,
-                            address + size,
-                            " 32bit",
-                            if prefetchable { " pref" } else { "" },
-                        );
-                    }
-                    Bar::Memory64 {
-                        address,
-                        size,
-                        prefetchable,
-                    } => {
-                        debug!(
-                            "  BAR {}: MEM [{:#x}, {:#x}){}{}",
-                            slot,
-                            address,
-                            address + size,
-                            " 64bit",
-                            if prefetchable { " pref" } else { "" },
-                        );
-                        slot += 1;
-                    }
-                    Bar::Io { port } => debug!("  BAR {}: IO  port: {:X}", slot, port),
-                }
-            }
-            slot += 1;
-        }
-    }
 }
 
 impl<C: Chip> Iterator for BusDeviceIterator<C> {
-    type Item = FunctionInfo;
+    type Item = PciDevice<C>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -191,57 +148,36 @@ impl<C: Chip> Iterator for BusDeviceIterator<C> {
                 }
                 continue;
             }
-
-            let header_type = header.header_type(self.access());
-
+            let device = PciDevice::new(self.root.chip.clone(), &header);
             let multi = header.has_multiple_functions(self.access());
-            let (revision, class, subclass, interface) = header.revision_and_class(self.access());
-            let info = FunctionInfo {
-                addr: current,
-                vendor_id,
-                device_id,
-                class,
-                subclass,
-                prog_if: interface,
-                revision,
-                header_type,
-            };
-
-            match header_type {
-                HeaderType::PciPciBridge => {
-                    let bridge = PciPciBridgeHeader::from_header(header, self.access()).unwrap();
-
-                    bridge.set_primary_bus_number(self.bus, self.access());
-
+            match device.kind() {
+                PciDeviceKind::PciPciBridge(bridge) => {
+                    bridge
+                        .header
+                        .set_primary_bus_number(self.bus, self.access());
                     self.bus_iter += 1;
                     self.bus = self.bus_iter;
-                    bridge.set_secondary_bus_number(self.bus, self.access());
-                    bridge.set_subordinate_bus_number(0xff, self.access());
+                    bridge
+                        .header
+                        .set_secondary_bus_number(self.bus, self.access());
+                    bridge
+                        .header
+                        .set_subordinate_bus_number(0xff, self.access());
 
-                    self.stack.push(bridge);
+                    self.stack
+                        .push(PciPciBridgeHeader::from_header(header, self.access()).unwrap());
                     self.device = 0;
                     self.function = 0;
                 }
-                HeaderType::Endpoint => {
-                    if current.function() == 0 && !multi {
-                        self.device += 1;
-                    } else {
-                        self.function += 1;
-                    }
-
-                    self.handle_ep(header);
-                }
                 _ => {
-                    warn!("not impl function");
                     if current.function() == 0 && !multi {
                         self.device += 1;
                     } else {
                         self.function += 1;
                     }
-                    continue;
                 }
             }
-            return Some(info);
+            return Some(device);
         }
     }
 }

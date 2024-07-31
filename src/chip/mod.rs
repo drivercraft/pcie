@@ -1,4 +1,4 @@
-use crate::{ConfigRegionAccess, PciAddress};
+use crate::types::{ConfigRegionAccess, PciAddress};
 use core::ptr::NonNull;
 pub use embedded_hal::delay::DelayNs;
 

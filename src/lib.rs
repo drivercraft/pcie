@@ -2,12 +2,12 @@
 
 extern crate alloc;
 mod chip;
+mod device;
 mod root;
-mod types;
+pub(crate) mod types;
 
 pub use chip::*;
+pub use device::*;
 use root::RootComplex;
-pub use types::*;
-
 
 pub type RootGeneric = RootComplex<generic::Generic>;
