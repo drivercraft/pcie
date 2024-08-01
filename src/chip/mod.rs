@@ -3,7 +3,7 @@ use core::ptr::NonNull;
 pub use embedded_hal::delay::DelayNs;
 
 pub mod generic;
-pub trait Chip: ConfigRegionAccess + Clone {
+pub trait Chip: ConfigRegionAccess + Send + Clone + 'static {
     fn new(mmio_base: usize) -> Self;
     fn mmio_base(&self) -> usize;
 

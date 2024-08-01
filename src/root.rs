@@ -1,20 +1,9 @@
-use core::{
-    fmt::Display,
-    sync::atomic::{fence, Ordering},
-};
-
-use crate::preludes::*;
-use crate::{
-    types::{device_type::DeviceType, *},
-    PciDevice, PciDeviceKind,
-};
+use crate::{preludes::*, types::*, PciDevice};
 use alloc::vec::Vec;
 use log::*;
 
-const MAX_BUS: u8 = 255;
 const MAX_DEVICE: u8 = 31;
 const MAX_FUNCTION: u8 = 7;
-const MAX_BARS: u8 = 6;
 
 /// The root complex of a PCI bus.
 #[derive(Clone)]
@@ -40,7 +29,6 @@ impl<C: Chip> RootComplex<C> {
             function: 0,
             stack: Vec::new(),
             bus_iter: 0,
-            subordinate: 0,
         }
     }
 }
@@ -55,7 +43,6 @@ pub struct BusDeviceIterator<C: Chip> {
     function: u8,
     stack: Vec<PciPciBridgeHeader>,
     bus_iter: u8,
-    subordinate: u8,
 }
 
 impl<C: Chip> BusDeviceIterator<C> {
@@ -105,7 +92,7 @@ impl<C: Chip> Iterator for BusDeviceIterator<C> {
             let current = self.current();
             let header = PciHeader::new(current);
 
-            let (vendor_id, device_id) = header.id(self.access());
+            let (vendor_id, _) = header.id(self.access());
 
             if vendor_id == 0xffff {
                 if current.function() == 0 {
@@ -117,8 +104,8 @@ impl<C: Chip> Iterator for BusDeviceIterator<C> {
             }
             let device = PciDevice::new(self.root.chip.clone(), &header);
             let multi = header.has_multiple_functions(self.access());
-            match device.kind() {
-                PciDeviceKind::PciPciBridge(bridge) => {
+            match &device {
+                PciDevice::PciPciBridge(bridge) => {
                     self.bus_iter += 1;
                     let primary = self.bus;
                     let secondary = self.bus_iter;

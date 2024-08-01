@@ -1,1 +1,1 @@
-pub use crate::{PciDeviceOps, Chip};
+pub use crate::{endpoint::EndpointOps, header::PciHeaderOps, pcipcibridge::PciPciBridgeOps, Chip};
