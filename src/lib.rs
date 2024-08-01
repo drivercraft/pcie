@@ -18,4 +18,9 @@ pub use device::*;
 pub use root::RootComplex;
 use types::PciAddress;
 
+pub use cardbusbridge::CardBusBridge;
+pub use endpoint::Endpoint;
+pub use pcipcibridge::PciPciBridge;
+pub use unknown::Unknown;
+
 pub type RootGeneric = RootComplex<generic::Generic>;
