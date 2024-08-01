@@ -44,6 +44,7 @@ pub struct Endpoint<C: Chip> {
     chip: C,
 }
 
+
 impl<C: Chip> Endpoint<C> {
     pub(crate) fn new(header: PciHeader, chip: C) -> Self {
         let header = EndpointHeader::from_header(header, &chip).unwrap();
