@@ -20,7 +20,16 @@ pub trait PciHeaderOps: Send {
         DeviceType::from((class, subclass))
     }
 }
+pub(crate) struct HeadWrap(PciHeader);
+impl HeadWrap {
+    pub fn new(header: PciHeader) -> Self {
+        Self(header)
+    }
 
+    pub fn header(&self) -> &PciHeader {
+        &self.0
+    }
+}
 macro_rules! impl_pci_header {
     ($t:ident) => {
         impl<C> PciHeaderOps for $t<C>
