@@ -3,9 +3,10 @@ use core::{
     sync::atomic::{fence, Ordering},
 };
 
+use crate::preludes::*;
 use crate::{
     types::{device_type::DeviceType, *},
-    Chip, PciDevice, PciDeviceKind,
+    PciDevice, PciDeviceKind,
 };
 use alloc::vec::Vec;
 use log::*;
@@ -41,45 +42,6 @@ impl<C: Chip> RootComplex<C> {
             bus_iter: 0,
             subordinate: 0,
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct FunctionInfo {
-    pub addr: PciAddress,
-    /// The PCI vendor ID.
-    pub vendor_id: u16,
-    /// The PCI device ID.
-    pub device_id: u16,
-    /// The PCI class.
-    pub class: u8,
-    /// The PCI subclass.
-    pub subclass: u8,
-    /// The PCI programming interface byte.
-    pub prog_if: u8,
-    /// The PCI revision ID.
-    pub revision: u8,
-    /// The type of PCI device.
-    pub header_type: HeaderType,
-}
-
-impl FunctionInfo {
-    pub fn device_type(&self) -> DeviceType {
-        DeviceType::from((self.class, self.subclass))
-    }
-}
-
-impl Display for FunctionInfo {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "{:?} {:#X}:{:#X} {:?}:{:?} ",
-            self.addr,
-            self.vendor_id,
-            self.device_id,
-            self.header_type,
-            self.device_type()
-        )
     }
 }
 

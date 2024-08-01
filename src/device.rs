@@ -6,25 +6,37 @@ pub use crate::types::{
 };
 use crate::types::{EndpointHeader, PciHeader, PciPciBridgeHeader};
 use crate::Chip;
-use derive_getters::Getters;
 
 pub struct PciDevice<C: Chip> {
     chip: C,
     header: PciHeader,
-    /// The PCI vendor ID.
     vendor_id: u16,
-    /// The PCI device ID.
     device_id: u16,
-    /// The PCI class.
     class: u8,
-    /// The PCI subclass.
     subclass: u8,
-    /// The PCI programming interface byte.
     interface: u8,
-    /// The PCI revision ID.
     revision: u8,
-    /// The PCI device kind.
     kind: PciDeviceKind<C>,
+}
+
+pub trait PciDeviceOps<C: Chip> {
+    fn vendor_id(&self) -> u16;
+
+    fn device_id(&self) -> u16;
+
+    fn class(&self) -> u8;
+
+    fn subclass(&self) -> u8;
+
+    fn address(&self) -> PciAddress;
+
+    fn interface(&self) -> u8;
+
+    fn revision(&self) -> u8;
+
+    fn kind<'a>(&'a self) -> &'a PciDeviceKind<C>;
+
+    fn device_type(&self) -> DeviceType;
 }
 
 impl<C: Chip> PciDevice<C> {
@@ -57,44 +69,44 @@ impl<C: Chip> PciDevice<C> {
             kind,
         }
     }
-
-    pub fn vendor_id(&self) -> u16 {
+}
+impl<C: Chip> PciDeviceOps<C> for PciDevice<C> {
+    fn vendor_id(&self) -> u16 {
         self.vendor_id
     }
 
-    pub fn device_id(&self) -> u16 {
+    fn device_id(&self) -> u16 {
         self.device_id
     }
 
-    pub fn class(&self) -> u8 {
+    fn class(&self) -> u8 {
         self.class
     }
 
-    pub fn subclass(&self) -> u8 {
+    fn subclass(&self) -> u8 {
         self.subclass
     }
 
-    pub fn address(&self) -> PciAddress {
+    fn address(&self) -> PciAddress {
         self.header.address()
     }
 
-    pub fn interface(&self) -> u8 {
+    fn interface(&self) -> u8 {
         self.interface
     }
 
-    pub fn revision(&self) -> u8 {
+    fn revision(&self) -> u8 {
         self.revision
     }
 
-    pub fn kind<'a>(&'a self) -> &'a PciDeviceKind<C> {
+    fn kind<'a>(&'a self) -> &'a PciDeviceKind<C> {
         &self.kind
     }
 
-    pub fn device_type(&self) -> DeviceType {
+    fn device_type(&self) -> DeviceType {
         DeviceType::from((self.class, self.subclass))
     }
 }
-
 impl<C: Chip> Display for PciDevice<C> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
