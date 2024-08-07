@@ -1,3 +1,5 @@
+use pci_types::ConfigRegionAccess;
+
 use crate::header::*;
 use crate::types::EndpointHeader;
 
@@ -44,7 +46,6 @@ pub struct Endpoint<C: Chip> {
     chip: C,
 }
 
-
 impl<C: Chip> Endpoint<C> {
     pub(crate) fn new(header: PciHeader, chip: C) -> Self {
         let header = EndpointHeader::from_header(header, &chip).unwrap();
@@ -53,6 +54,16 @@ impl<C: Chip> Endpoint<C> {
 }
 
 impl_pci_header!(Endpoint);
+
+impl<C: Chip> ConfigRegionAccess for Endpoint<C> {
+    unsafe fn read(&self, address: PciAddress, offset: u16) -> u32 {
+        self.chip.read(address, offset)
+    }
+
+    unsafe fn write(&self, address: PciAddress, offset: u16, value: u32) {
+        self.chip.write(address, offset, value)
+    }
+}
 
 impl<C: Chip> EndpointOps for Endpoint<C> {
     /// Get the contents of a BAR in a given slot. Empty bars will return `None`.

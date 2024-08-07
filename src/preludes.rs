@@ -10,7 +10,7 @@ pub use crate::{
     types::{
         capability::{PciCapability, PciCapabilityAddress},
         device_type::DeviceType,
-        Bar, BarWriteError, CommandRegister, PciAddress, StatusRegister,
+        Bar, BarWriteError, CommandRegister, ConfigRegionAccess, PciAddress, StatusRegister,
     },
     unknown::UnknownOps,
     Chip,
