@@ -6,7 +6,7 @@
 
 use bare_test::{driver::device_tree::get_device_tree, fdt::PciSpace, mem::mmu::iomap, println};
 use log::info;
-use pcie::{Header, RootComplexGeneric};
+use pcie::RootComplexGeneric;
 
 extern crate alloc;
 extern crate bare_test;
