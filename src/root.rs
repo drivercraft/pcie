@@ -68,7 +68,7 @@ pub struct PciIterator<'a, C: Chip> {
     is_finish: bool,
 }
 
-impl<'a, C: Chip> Iterator for PciIterator<'a, C> {
+impl<C: Chip> Iterator for PciIterator<'_, C> {
     type Item = Header;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -87,7 +87,7 @@ impl<'a, C: Chip> Iterator for PciIterator<'a, C> {
     }
 }
 
-impl<'a, C: Chip> PciIterator<'a, C> {
+impl<C: Chip> PciIterator<'_, C> {
     fn get_current_valid(&mut self) -> Option<Header> {
         let address = self.address();
 
@@ -125,7 +125,6 @@ impl<'a, C: Chip> PciIterator<'a, C> {
             pci_types::HeaderType::PciPciBridge => {
                 let bridge = PciPciBridgeHeader::from_header(pci_header, access).unwrap();
                 let want_primary_bus = bridge.primary_bus_number(access);
-                // let want_subordinate_bus = bridge.subordinate_bus_number(access);
                 let want_secondary_bus = bridge.secondary_bus_number(access);
 
                 debug!(
@@ -232,14 +231,15 @@ impl<'a, C: Chip> PciIterator<'a, C> {
 
     fn next(&mut self, current_bridge: Option<&PciPciBridge>) {
         if let Some(bridge) = current_bridge {
+            for parent in &mut self.stack {
+                parent.header.subordinate_bus += 1;
+            }
+
             self.stack.push(Bridge {
                 header: bridge.clone(),
                 device: 1,
             });
 
-            for parent in &mut self.stack {
-                parent.header.subordinate_bus += 1;
-            }
             self.function = 0;
             return;
         }

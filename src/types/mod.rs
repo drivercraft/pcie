@@ -1,4 +1,5 @@
 use bit_field::BitField;
+use log::debug;
 use pci_types::{CommandRegister, ConfigRegionAccess, StatusRegister};
 
 pub use pci_types::PciAddress;
@@ -57,7 +58,7 @@ impl PciPciBridge {
     }
 
     pub fn sync_bus_number(&self, access: impl ConfigRegionAccess) {
-        if self.address.bus() > 0 {
+        if self.secondary_bus > 0 {
             self.update_bus_number(access, |mut bus| {
                 bus.primary = self.primary_bus;
                 bus.secondary = self.secondary_bus;
