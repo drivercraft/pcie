@@ -5,8 +5,6 @@ use crate::{err::*, PciAddress};
 pub mod generic;
 
 pub trait Chip: Send {
-    fn init(&mut self) -> Result;
-
     /// Performs a PCI read at `address` with `offset`.
     ///
     /// # Safety
@@ -19,11 +17,5 @@ pub trait Chip: Send {
     /// # Safety
     ///
     /// `address` and `offset` must be valid for PCI writes.
-    unsafe fn write(
-        &self,
-        mmio_base: NonNull<u8>,
-        address: PciAddress,
-        offset: u16,
-        value: u32,
-    );
+    unsafe fn write(&self, mmio_base: NonNull<u8>, address: PciAddress, offset: u16, value: u32);
 }
