@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use crate::{endpoiont::PciEndpoint, Chip};
+use crate::{Chip, Header, PciAddress};
 use core::{ops::Range, ptr::NonNull};
 
 pub struct RootComplex<C: Chip> {
@@ -16,7 +16,7 @@ where
         Self { chip, mmio_base }
     }
 
-    pub fn enumerate(&self, range: Option<Range<usize>>) -> PciIterator<'_, C> {
+    pub fn enumerate(&mut self, range: Option<Range<usize>>) -> PciIterator<'_, C> {
         let range = range.unwrap_or_else(|| 0..0x100);
 
         PciIterator {
@@ -29,12 +29,20 @@ where
             bus_iter: 0,
         }
     }
+
+    pub fn read_config(&self, address: PciAddress, offset: u16) -> u32 {
+        unsafe { self.chip.read(self.mmio_base, address, offset) }
+    }
+
+    pub fn write_config(&mut self, address: PciAddress, offset: u16, value: u32) {
+        unsafe { self.chip.write(self.mmio_base, address, offset, value) }
+    }
 }
 
 pub struct PciIterator<'a, C: Chip> {
     /// This must only be used to read read-only fields, and must not be exposed outside this
     /// module, because it uses the same CAM as the main `PciRoot` instance.
-    root: &'a RootComplex<C>,
+    root: &'a mut RootComplex<C>,
     segment: u16,
     bus: u8,
     bus_max: u8,
@@ -44,13 +52,20 @@ pub struct PciIterator<'a, C: Chip> {
 }
 
 impl<'a, C: Chip> Iterator for PciIterator<'a, C> {
-    type Item = PciDevice<'a, C>;
+    type Item = Header;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
+        // loop {
+        //     let curent_addr = self.current_addr();
+        //     let header = types::Header::new(self.root, curent_addr);
+        // }
+
+        None
     }
 }
 
-pub enum PciDevice<'a, C: Chip> {
-    Endpoint(PciEndpoint<'a, C>),
+impl<'a, C: Chip> PciIterator<'a, C> {
+    fn current_addr(&self) -> PciAddress {
+        PciAddress::new(self.segment, self.bus, self.device, self.function)
+    }
 }

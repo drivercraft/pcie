@@ -15,4 +15,5 @@ pub use chip::{
     Chip,
 };
 pub use endpoiont::PciEndpoint;
-pub use root::{PciDevice, RootComplex};
+pub use root::{RootComplex};
+pub use types::*;

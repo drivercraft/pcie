@@ -15,7 +15,7 @@ impl Chip for Generic {
     }
 
     unsafe fn write(
-        &mut self,
+        &self,
         mmio_base: NonNull<u8>,
         address: PciAddress,
         offset: u16,

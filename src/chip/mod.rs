@@ -20,7 +20,7 @@ pub trait Chip: Send {
     ///
     /// `address` and `offset` must be valid for PCI writes.
     unsafe fn write(
-        &mut self,
+        &self,
         mmio_base: NonNull<u8>,
         address: PciAddress,
         offset: u16,

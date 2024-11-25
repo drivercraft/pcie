@@ -6,7 +6,7 @@
 
 use bare_test::{driver::device_tree::get_device_tree, fdt::PciSpace, mem::mmu::iomap, println};
 use log::info;
-use pcie::RootComplexGeneric;
+use pcie::{Header, RootComplexGeneric};
 
 extern crate alloc;
 extern crate bare_test;
@@ -52,8 +52,11 @@ fn test_pcie() {
 
     info!("Init PCIE @{:?}", base_vaddr);
 
-    let root = RootComplexGeneric::new(base_vaddr);
+    let mut root = RootComplexGeneric::new(base_vaddr);
 
+    for header in root.enumerate(None) {
+        println!("header: {:?}", header);
+    }
 
     println!("test passed!");
 }
