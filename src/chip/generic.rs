@@ -1,5 +1,7 @@
 use core::ptr::NonNull;
 
+use log::debug;
+
 use crate::{root::RootComplex, PciAddress};
 
 use super::Chip;
@@ -14,13 +16,7 @@ impl Chip for Generic {
         ptr.as_ptr().read_volatile()
     }
 
-    unsafe fn write(
-        &self,
-        mmio_base: NonNull<u8>,
-        address: PciAddress,
-        offset: u16,
-        value: u32,
-    ) {
+    unsafe fn write(&self, mmio_base: NonNull<u8>, address: PciAddress, offset: u16, value: u32) {
         let ptr = self.mmio_addr(mmio_base, address, offset);
         ptr.as_ptr().write_volatile(value);
     }
@@ -37,8 +33,8 @@ impl Generic {
             | (address.function() as u32) << 12
             | offset as u32;
         unsafe {
-            let ptr = mmio_base.add((address >> 2) as usize);
-            ptr.cast()
+            let ptr: NonNull<u32> = mmio_base.cast().add((address >> 2) as usize);
+            ptr
         }
     }
 }

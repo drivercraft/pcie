@@ -1,5 +1,8 @@
 use alloc::vec::Vec;
-use pci_types::{ConfigRegionAccess, PciHeader, PciPciBridgeHeader};
+use log::debug;
+use pci_types::{
+    CommandRegister, ConfigRegionAccess, PciHeader, PciPciBridgeHeader, StatusRegister,
+};
 
 use crate::{Chip, Endpoint, Header, PciAddress, PciPciBridge, Unknown};
 use core::{hint::spin_loop, ops::Range, ptr::NonNull};
@@ -30,8 +33,7 @@ where
             function: 0,
             is_mulitple_function: false,
             is_finish: false,
-            stack: Vec::new(),
-            bus_start: range.start as _,
+            stack: alloc::vec![Bridge::root(range.start as _)],
         }
     }
 
@@ -60,7 +62,6 @@ pub struct PciIterator<'a, C: Chip> {
     root: &'a RootComplex<C>,
     segment: u16,
     stack: Vec<Bridge>,
-    bus_start: u8,
     bus_max: u8,
     function: u8,
     is_mulitple_function: bool,
@@ -90,21 +91,27 @@ impl<'a, C: Chip> PciIterator<'a, C> {
     fn get_current_valid(&mut self) -> Option<Header> {
         let address = self.address();
 
+        debug!("iter: {:?}", address);
+
         let pci_header = PciHeader::new(address);
         let access = self.root;
         let (vendor_id, device_id) = pci_header.id(access);
+
+        debug!("vid {:#x} did {:#x}", vendor_id, device_id);
+
         if vendor_id == 0xffff {
             return None;
         }
 
-        let has_multiple_functions = pci_header.has_multiple_functions(access);
         let status = pci_header.status(access);
         let command = pci_header.command(access);
+        let has_multiple_functions = pci_header.has_multiple_functions(access);
         self.is_mulitple_function = has_multiple_functions;
 
         Some(match pci_header.header_type(access) {
             pci_types::HeaderType::Endpoint => {
                 let ep = pci_types::EndpointHeader::from_header(pci_header, access).unwrap();
+                debug!("ep");
 
                 Header::Endpoint(Endpoint {
                     address,
@@ -121,17 +128,27 @@ impl<'a, C: Chip> PciIterator<'a, C> {
                 // let want_subordinate_bus = bridge.subordinate_bus_number(access);
                 let want_secondary_bus = bridge.secondary_bus_number(access);
 
+                debug!(
+                    "primary: {} secondary: {}",
+                    want_primary_bus, want_secondary_bus
+                );
+
                 let primary_bus = address.bus();
-                let secondary_bus = self
-                    .stack
-                    .last()
-                    .map(|p| p.header.subordinate_bus)
-                    .unwrap_or_default();
+                let secondary_bus;
 
-                assert_eq!(want_primary_bus, primary_bus);
-                assert_eq!(want_secondary_bus, secondary_bus);
+                if let Some(parent) = self.stack.last_mut() {
+                    if parent.header.subordinate_bus == self.bus_max {
+                        return None;
+                    }
 
+                    secondary_bus = parent.header.subordinate_bus + 1;
+                } else {
+                    panic!("no parent");
+                }
                 let subordinate_bus = secondary_bus;
+
+                // assert_eq!(want_primary_bus, primary_bus);
+                // assert_eq!(want_secondary_bus, secondary_bus);
 
                 Header::PciPciBridge(PciPciBridge {
                     address,
@@ -167,19 +184,10 @@ impl<'a, C: Chip> PciIterator<'a, C> {
     }
 
     fn address(&self) -> PciAddress {
-        let bus;
-        let device;
+        let parent = self.stack.last().unwrap();
+        let bus = parent.header.secondary_bus;
+        let device = parent.device;
 
-        match self.stack.last() {
-            Some(bridge) => {
-                bus = bridge.header.secondary_bus;
-                device = bridge.device;
-            }
-            None => {
-                bus = self.bus_start;
-                device = 0;
-            }
-        }
         PciAddress::new(self.segment, bus, device, self.function)
     }
 
@@ -201,32 +209,37 @@ impl<'a, C: Chip> PciIterator<'a, C> {
 
     /// 若进位返回true
     fn next_device_not_ok(&mut self) -> bool {
-        if self.stack.last().unwrap().device == MAX_DEVICE {
-            if let Some(parent) = self.stack.pop() {
-                self.is_finish = parent.header.subordinate_bus == self.bus_max;
+        if let Some(parent) = self.stack.last_mut() {
+            if parent.device == MAX_DEVICE {
+                if let Some(parent) = self.stack.pop() {
+                    self.is_finish = parent.header.subordinate_bus == self.bus_max;
 
-                parent.header.sync_bus_number(self.root);
-                self.function = 0;
-                return true;
+                    parent.header.sync_bus_number(self.root);
+                    self.function = 0;
+                    return true;
+                } else {
+                    self.is_finish = true;
+                }
             } else {
-                self.is_finish = true;
+                parent.device += 1;
             }
         } else {
-            self.stack.last_mut().unwrap().device += 1;
+            self.is_finish = true;
         }
+
         false
     }
 
     fn next(&mut self, current_bridge: Option<&PciPciBridge>) {
         if let Some(bridge) = current_bridge {
-            for parent in &mut self.stack {
-                parent.header.subordinate_bus += 1;
-            }
-
             self.stack.push(Bridge {
                 header: bridge.clone(),
                 device: 1,
             });
+
+            for parent in &mut self.stack {
+                parent.header.subordinate_bus += 1;
+            }
             self.function = 0;
             return;
         }
@@ -242,4 +255,23 @@ impl<'a, C: Chip> PciIterator<'a, C> {
 struct Bridge {
     header: PciPciBridge,
     device: u8,
+}
+
+impl Bridge {
+    fn root(bus_start: u8) -> Self {
+        Bridge {
+            header: PciPciBridge {
+                address: PciAddress::new(0, 0, 0, 0),
+                vendor_id: 0,
+                device_id: 0,
+                command: CommandRegister::empty(),
+                status: StatusRegister::new(0),
+                has_multiple_functions: true,
+                primary_bus: bus_start,
+                secondary_bus: bus_start,
+                subordinate_bus: bus_start,
+            },
+            device: 0,
+        }
+    }
 }

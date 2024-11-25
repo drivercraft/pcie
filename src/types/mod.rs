@@ -57,12 +57,14 @@ impl PciPciBridge {
     }
 
     pub fn sync_bus_number(&self, access: impl ConfigRegionAccess) {
-        self.update_bus_number(access, |mut bus| {
-            bus.primary = self.primary_bus;
-            bus.secondary = self.secondary_bus;
-            bus.subordinate = self.subordinate_bus;
-            bus
-        });
+        if self.address.bus() > 0 {
+            self.update_bus_number(access, |mut bus| {
+                bus.primary = self.primary_bus;
+                bus.secondary = self.secondary_bus;
+                bus.subordinate = self.subordinate_bus;
+                bus
+            });
+        }
     }
 }
 
