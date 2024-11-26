@@ -155,7 +155,13 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
                             let new_bar_vec = bar_vec
                                 .iter()
                                 .map(|old| {
-                                    old.clone().map(|ref b| a.alloc_memory64(b.size).unwrap())
+                                    old.clone().map(|ref b| {
+                                        if b.address > 0 && b.address < u32::MAX as u64 {
+                                            a.alloc_memory32(b.size as u32).unwrap() as u64
+                                        } else {
+                                            a.alloc_memory64(b.size).unwrap()
+                                        }
+                                    })
                                 })
                                 .collect::<Vec<_>>();
 
