@@ -2,15 +2,14 @@ use core::fmt::Display;
 
 use alloc::vec::Vec;
 use bit_field::BitField;
-use pci_types::{
-    capability::PciCapability, Bar, CommandRegister, ConfigRegionAccess, EndpointHeader, PciHeader,
-    StatusRegister,
-};
+use pci_types::{Bar, ConfigRegionAccess, EndpointHeader, PciHeader};
 
 mod bar;
 
 pub use bar::*;
-pub use pci_types::{device_type::DeviceType, PciAddress};
+pub use pci_types::{
+    capability::PciCapability, device_type::DeviceType, CommandRegister, PciAddress, StatusRegister,
+};
 
 use crate::{Chip, RootComplex};
 
