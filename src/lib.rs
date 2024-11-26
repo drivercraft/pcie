@@ -2,20 +2,20 @@
 
 extern crate alloc;
 
+mod bar_alloc;
 mod chip;
 pub mod err;
 mod root;
 mod types;
-mod bar_alloc;
 
 pub use chip::{
     generic::{Generic, RootComplexGeneric},
     Chip,
 };
 
+pub use bar_alloc::*;
 pub use root::RootComplex;
 pub use types::*;
-pub use bar_alloc::*;
 
 pub trait BarAllocator {
     fn alloc_memory32(&mut self, size: u32) -> Option<u32>;

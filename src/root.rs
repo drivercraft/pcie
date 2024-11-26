@@ -108,6 +108,9 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
         let status = pci_header.status(access);
         let command = pci_header.command(access);
         let has_multiple_functions = pci_header.has_multiple_functions(access);
+        let (device_revision, base_class, sub_class, interface) =
+            pci_header.revision_and_class(access);
+
         self.is_mulitple_function = has_multiple_functions;
 
         Some(match pci_header.header_type(access) {
@@ -165,6 +168,10 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
                     status,
                     has_multiple_functions,
                     bar,
+                    device_revision,
+                    base_class,
+                    sub_class,
+                    interface,
                 })
             }
             pci_types::HeaderType::PciPciBridge => {
@@ -196,6 +203,10 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
                     secondary_bus,
                     subordinate_bus,
                     primary_bus,
+                    device_revision,
+                    base_class,
+                    sub_class,
+                    interface,
                 })
             }
             pci_types::HeaderType::Unknown(u) => Header::Unknown(Unknown {
@@ -206,6 +217,10 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
                 status,
                 has_multiple_functions,
                 kind: u,
+                device_revision,
+                base_class,
+                sub_class,
+                interface,
             }),
             _ => Header::CardBusBridge(CardBusBridge {
                 address,
@@ -214,6 +229,10 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
                 command,
                 status,
                 has_multiple_functions,
+                device_revision,
+                base_class,
+                sub_class,
+                interface,
             }),
         })
     }
@@ -306,6 +325,10 @@ impl Bridge {
                 primary_bus: bus_start,
                 secondary_bus: bus_start,
                 subordinate_bus: bus_start,
+                device_revision: 0,
+                base_class: 0,
+                sub_class: 0,
+                interface: 0,
             },
             device: 0,
         }

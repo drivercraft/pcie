@@ -55,14 +55,7 @@ fn test_pcie() {
     let mut root = RootComplexGeneric::new(base_vaddr);
 
     for header in root.enumerate(None, Some(bar_alloc)) {
-        match &header {
-            pcie::Header::PciPciBridge(pci_pci_bridge) => {}
-            pcie::Header::Endpoint(endpoint) => {}
-            pcie::Header::CardBusBridge(card_bus_bridge) => {}
-            pcie::Header::Unknown(unknown) => {}
-        }
-
-        println!("header: {:?}", header);
+        println!("{}", header);
     }
 
     println!("test passed!");

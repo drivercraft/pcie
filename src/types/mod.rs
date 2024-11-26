@@ -1,10 +1,12 @@
+use core::fmt::Display;
+
 use bit_field::BitField;
 use pci_types::{Bar, CommandRegister, ConfigRegionAccess, EndpointHeader, StatusRegister};
 
 mod bar;
 
 pub use bar::*;
-pub use pci_types::PciAddress;
+pub use pci_types::{device_type::DeviceType, PciAddress};
 
 macro_rules! struct_header {
     ($name: ident, $($more: tt)*) => {
@@ -16,7 +18,14 @@ macro_rules! struct_header {
             pub command: CommandRegister,
             pub status: StatusRegister,
             pub has_multiple_functions: bool,
+            pub device_revision: u8, pub base_class: u8, pub sub_class:u8, pub interface: u8,
             $($more)*
+        }
+
+        impl $name{
+            pub fn device_type(&self)->DeviceType{
+                DeviceType::from((self.base_class, self.sub_class))
+            }
         }
     };
 }
@@ -27,6 +36,17 @@ pub enum Header {
     Endpoint(Endpoint),
     CardBusBridge(CardBusBridge),
     Unknown(Unknown),
+}
+
+impl Display for Header {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Header::PciPciBridge(v) => write!(f, "{}", v),
+            Header::Endpoint(v) => write!(f, "{}", v),
+            Header::CardBusBridge(_card_bus_bridge) => write!(f, "CardBusBridge"),
+            Header::Unknown(unknown) => write!(f, "Unknown({:?})", unknown.kind),
+        }
+    }
 }
 
 struct_header!(Unknown,
@@ -53,13 +73,28 @@ impl BarHeader for EndpointHeader {
     }
 }
 
+impl Display for Endpoint {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(
+            f,
+            "Endpoint     {:?} {:#06X}:{:#06X} {:?}",
+            self.address,
+            self.vendor_id,
+            self.device_id,
+            self.device_type()
+        )?;
+        write!(f, "{:?}", self.bar)?;
+
+        Ok(())
+    }
+}
+
 struct_header!(CardBusBridge,);
 
 struct_header!(PciPciBridge,
     pub primary_bus: u8,
     pub secondary_bus: u8,
     pub subordinate_bus: u8,
-
 );
 
 impl PciPciBridge {
@@ -90,6 +125,21 @@ impl PciPciBridge {
                 bus
             });
         }
+    }
+}
+
+impl Display for PciPciBridge {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(
+            f,
+            "PciPciBridge {:?} {:#06X}:{:#06X} {:?}",
+            self.address,
+            self.vendor_id,
+            self.device_id,
+            self.device_type()
+        )?;
+
+        Ok(())
     }
 }
 
