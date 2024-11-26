@@ -2,6 +2,13 @@
 name = "pcie"
 version = "0.2.0"
 edition = "2021"
+authors = ["周睿 <zrufo747@outlook.com>"]
+repository = "https://gitee.com/ZR233/pcie"
+license = "MIT"
+description = "A simple PCIE driver for enumerating devices."
+keywords = ["os", "pci", "pcie", "driver"]
+categories = ["embedded", "no-std"]
+
 
 [dependencies]
 log = "0.4"
