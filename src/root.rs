@@ -123,8 +123,12 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
         Some(match pci_header.header_type(access) {
             pci_types::HeaderType::Endpoint => {
                 let access = self.root;
-
-                let ep = pci_types::EndpointHeader::from_header(pci_header, access).unwrap();
+                let mut ep = pci_types::EndpointHeader::from_header(pci_header, access).unwrap();
+                ep.update_command(access, |mut cmd| {
+                    cmd.remove(CommandRegister::IO_ENABLE);
+                    cmd.remove(CommandRegister::MEMORY_ENABLE);
+                    cmd
+                });
 
                 let mut bar = ep.parse_bar(6, access);
                 let (interrupt_pin, interrupt_line) = ep.interrupt(access);
