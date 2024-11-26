@@ -1,10 +1,11 @@
 use alloc::vec::Vec;
-use log::debug;
-use pci_types::{
-    CommandRegister, ConfigRegionAccess, PciHeader, PciPciBridgeHeader, StatusRegister,
-};
+use log::error;
+use pci_types::{CommandRegister, ConfigRegionAccess, PciHeader, StatusRegister};
 
-use crate::{Chip, Endpoint, Header, PciAddress, PciPciBridge, Unknown};
+use crate::{
+    BarAllocator, BarHeader, CardBusBridge, Chip, Endpoint, Header, PciAddress, PciPciBridge,
+    Unknown,
+};
 use core::{hint::spin_loop, ops::Range, ptr::NonNull};
 
 const MAX_DEVICE: u8 = 31;
@@ -23,11 +24,16 @@ where
         Self { chip, mmio_base }
     }
 
-    pub fn enumerate(&mut self, range: Option<Range<usize>>) -> PciIterator<'_, C> {
+    pub fn enumerate<A: BarAllocator>(
+        &mut self,
+        range: Option<Range<usize>>,
+        bar_alloc: Option<A>,
+    ) -> PciIterator<'_, C, A> {
         let range = range.unwrap_or_else(|| 0..0x100);
 
         PciIterator {
             root: self,
+            allocator: bar_alloc,
             segment: 0,
             bus_max: (range.end - 1) as _,
             function: 0,
@@ -56,10 +62,11 @@ impl<C: Chip> ConfigRegionAccess for RootComplex<C> {
     }
 }
 
-pub struct PciIterator<'a, C: Chip> {
+pub struct PciIterator<'a, C: Chip, A: BarAllocator> {
     /// This must only be used to read read-only fields, and must not be exposed outside this
     /// module, because it uses the same CAM as the main `PciRoot` instance.
     root: &'a RootComplex<C>,
+    allocator: Option<A>,
     segment: u16,
     stack: Vec<Bridge>,
     bus_max: u8,
@@ -68,7 +75,7 @@ pub struct PciIterator<'a, C: Chip> {
     is_finish: bool,
 }
 
-impl<C: Chip> Iterator for PciIterator<'_, C> {
+impl<C: Chip, A: BarAllocator> Iterator for PciIterator<'_, C, A> {
     type Item = Header;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -87,18 +94,13 @@ impl<C: Chip> Iterator for PciIterator<'_, C> {
     }
 }
 
-impl<C: Chip> PciIterator<'_, C> {
+impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
     fn get_current_valid(&mut self) -> Option<Header> {
         let address = self.address();
-
-        debug!("iter: {:?}", address);
 
         let pci_header = PciHeader::new(address);
         let access = self.root;
         let (vendor_id, device_id) = pci_header.id(access);
-
-        debug!("vid {:#x} did {:#x}", vendor_id, device_id);
-
         if vendor_id == 0xffff {
             return None;
         }
@@ -110,8 +112,50 @@ impl<C: Chip> PciIterator<'_, C> {
 
         Some(match pci_header.header_type(access) {
             pci_types::HeaderType::Endpoint => {
+                let access = self.root;
+
                 let ep = pci_types::EndpointHeader::from_header(pci_header, access).unwrap();
-                debug!("ep");
+
+                let mut bar = ep.parse_bar(6, access);
+
+                if let Some(a) = &mut self.allocator {
+                    match &bar {
+                        crate::BarVec::Memory32(bar_vec) => {
+                            let new_bar_vec = bar_vec
+                                .iter()
+                                .map(|old| {
+                                    old.clone().map(|ref b| a.alloc_memory32(b.size).unwrap())
+                                })
+                                .collect::<Vec<_>>();
+
+                            for (i, bar) in new_bar_vec.into_iter().enumerate() {
+                                if let Some(value) = bar {
+                                    bar_vec.set(i, value, access).unwrap();
+                                }
+                            }
+                        }
+                        crate::BarVec::Memory64(bar_vec) => {
+                            let new_bar_vec = bar_vec
+                                .iter()
+                                .map(|old| {
+                                    old.clone().map(|ref b| a.alloc_memory64(b.size).unwrap())
+                                })
+                                .collect::<Vec<_>>();
+
+                            for (i, bar) in new_bar_vec.into_iter().enumerate() {
+                                if let Some(value) = bar {
+                                    bar_vec
+                                        .set(i, value, access)
+                                        .inspect_err(|e| error!("{:?}", e))
+                                        .unwrap();
+                                }
+                            }
+                        }
+                        crate::BarVec::Io(_bar_vec_t) => {}
+                    }
+
+                    bar = ep.parse_bar(6, access);
+                }
 
                 Header::Endpoint(Endpoint {
                     address,
@@ -120,17 +164,13 @@ impl<C: Chip> PciIterator<'_, C> {
                     command,
                     status,
                     has_multiple_functions,
+                    bar,
                 })
             }
             pci_types::HeaderType::PciPciBridge => {
-                let bridge = PciPciBridgeHeader::from_header(pci_header, access).unwrap();
-                let want_primary_bus = bridge.primary_bus_number(access);
-                let want_secondary_bus = bridge.secondary_bus_number(access);
-
-                debug!(
-                    "primary: {} secondary: {}",
-                    want_primary_bus, want_secondary_bus
-                );
+                // let bridge = PciPciBridgeHeader::from_header(pci_header, access).unwrap();
+                // let want_primary_bus = bridge.primary_bus_number(access);
+                // let want_secondary_bus = bridge.secondary_bus_number(access);
 
                 let primary_bus = address.bus();
                 let secondary_bus;
@@ -145,9 +185,6 @@ impl<C: Chip> PciIterator<'_, C> {
                     panic!("no parent");
                 }
                 let subordinate_bus = secondary_bus;
-
-                // assert_eq!(want_primary_bus, primary_bus);
-                // assert_eq!(want_secondary_bus, secondary_bus);
 
                 Header::PciPciBridge(PciPciBridge {
                     address,
@@ -170,14 +207,13 @@ impl<C: Chip> PciIterator<'_, C> {
                 has_multiple_functions,
                 kind: u,
             }),
-            _ => Header::Unknown(Unknown {
+            _ => Header::CardBusBridge(CardBusBridge {
                 address,
                 vendor_id,
                 device_id,
                 command,
                 status,
                 has_multiple_functions,
-                kind: 2,
             }),
         })
     }
@@ -237,7 +273,7 @@ impl<C: Chip> PciIterator<'_, C> {
 
             self.stack.push(Bridge {
                 header: bridge.clone(),
-                device: 1,
+                device: 0,
             });
 
             self.function = 0;

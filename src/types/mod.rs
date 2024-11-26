@@ -1,7 +1,9 @@
 use bit_field::BitField;
-use log::debug;
-use pci_types::{CommandRegister, ConfigRegionAccess, StatusRegister};
+use pci_types::{Bar, CommandRegister, ConfigRegionAccess, EndpointHeader, StatusRegister};
 
+mod bar;
+
+pub use bar::*;
 pub use pci_types::PciAddress;
 
 macro_rules! struct_header {
@@ -23,6 +25,7 @@ macro_rules! struct_header {
 pub enum Header {
     PciPciBridge(PciPciBridge),
     Endpoint(Endpoint),
+    CardBusBridge(CardBusBridge),
     Unknown(Unknown),
 }
 
@@ -30,12 +33,33 @@ struct_header!(Unknown,
     pub kind: u8
 );
 
-struct_header!(Endpoint,);
+struct_header!(Endpoint,
+    pub bar: BarVec,
+);
+
+impl Endpoint {}
+
+impl BarHeader for EndpointHeader {
+    fn read_bar<C: crate::Chip>(&self, slot: usize, access: &crate::RootComplex<C>) -> Option<Bar> {
+        self.bar(slot as u8, access)
+    }
+
+    fn address(&self) -> PciAddress {
+        self.header().address()
+    }
+
+    fn header_type(&self) -> pci_types::HeaderType {
+        pci_types::HeaderType::Endpoint
+    }
+}
+
+struct_header!(CardBusBridge,);
 
 struct_header!(PciPciBridge,
     pub primary_bus: u8,
     pub secondary_bus: u8,
     pub subordinate_bus: u8,
+
 );
 
 impl PciPciBridge {

@@ -6,7 +6,7 @@
 
 use bare_test::{driver::device_tree::get_device_tree, fdt::PciSpace, mem::mmu::iomap, println};
 use log::info;
-use pcie::RootComplexGeneric;
+use pcie::{RootComplexGeneric, SimpleBarAllocator};
 
 extern crate alloc;
 extern crate bare_test;
@@ -32,18 +32,18 @@ fn test_pcie() {
 
     println!("pcie: {}", pcie.node.name);
 
+    let mut bar_alloc = SimpleBarAllocator::default();
+
     for reg in pcie.node.reg().unwrap() {
         println!("pcie reg: {:#x}", reg.address);
         pcie_regs.push(iomap((reg.address as usize).into(), reg.size.unwrap()));
     }
 
-    let mut m32_range = 0..0;
-    let mut m64_range = 0..0;
-
     for range in pcie.ranges().unwrap() {
+        info!("{:?}", range);
         match range.space {
-            PciSpace::Memory32 => m32_range = range.cpu_address..range.size,
-            PciSpace::Memory64 => m64_range = range.cpu_address..range.size,
+            PciSpace::Memory32 => bar_alloc.set_mem32(range.cpu_address as _, range.size as _),
+            PciSpace::Memory64 => bar_alloc.set_mem64(range.cpu_address, range.size),
             _ => {}
         }
     }
@@ -54,7 +54,14 @@ fn test_pcie() {
 
     let mut root = RootComplexGeneric::new(base_vaddr);
 
-    for header in root.enumerate(None) {
+    for header in root.enumerate(None, Some(bar_alloc)) {
+        match &header {
+            pcie::Header::PciPciBridge(pci_pci_bridge) => {}
+            pcie::Header::Endpoint(endpoint) => {}
+            pcie::Header::CardBusBridge(card_bus_bridge) => {}
+            pcie::Header::Unknown(unknown) => {}
+        }
+
         println!("header: {:?}", header);
     }
 
