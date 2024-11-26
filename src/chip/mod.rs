@@ -1,6 +1,6 @@
 use core::ptr::NonNull;
 
-use crate::{err::*, PciAddress};
+use crate::PciAddress;
 
 pub mod generic;
 
