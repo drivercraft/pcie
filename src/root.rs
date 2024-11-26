@@ -4,7 +4,7 @@ use pci_types::{CommandRegister, ConfigRegionAccess, PciHeader, StatusRegister};
 
 use crate::{
     BarAllocator, BarHeader, CardBusBridge, Chip, Endpoint, Header, PciAddress, PciPciBridge,
-    Unknown,
+    SimpleBarAllocator, Unknown,
 };
 use core::{hint::spin_loop, ops::Range, ptr::NonNull};
 
@@ -41,6 +41,13 @@ where
             is_finish: false,
             stack: alloc::vec![Bridge::root(range.start as _)],
         }
+    }
+
+    pub fn enumerate_no_modify(
+        &mut self,
+        range: Option<Range<usize>>,
+    ) -> PciIterator<'_, C, SimpleBarAllocator> {
+        self.enumerate(range, None)
     }
 
     pub fn read_config(&self, address: PciAddress, offset: u16) -> u32 {
