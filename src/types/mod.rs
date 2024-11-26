@@ -3,8 +3,8 @@ use core::fmt::Display;
 use alloc::vec::Vec;
 use bit_field::BitField;
 use pci_types::{
-    capability::{CapabilityIterator, PciCapability},
-    Bar, CommandRegister, ConfigRegionAccess, EndpointHeader, PciHeader, StatusRegister,
+    capability::PciCapability, Bar, CommandRegister, ConfigRegionAccess, EndpointHeader, PciHeader,
+    StatusRegister,
 };
 
 mod bar;
