@@ -120,6 +120,9 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
                 let ep = pci_types::EndpointHeader::from_header(pci_header, access).unwrap();
 
                 let mut bar = ep.parse_bar(6, access);
+                let (interrupt_pin, interrupt_line) = ep.interrupt(access);
+                let capability_pointer = ep.capability_pointer(access);
+                let capabilities = ep.capabilities(access).collect::<Vec<_>>();
 
                 if let Some(a) = &mut self.allocator {
                     match &bar {
@@ -172,6 +175,10 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
                     base_class,
                     sub_class,
                     interface,
+                    interrupt_pin,
+                    interrupt_line,
+                    capability_pointer,
+                    capabilities,
                 })
             }
             pci_types::HeaderType::PciPciBridge => {

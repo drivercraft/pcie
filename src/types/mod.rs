@@ -1,12 +1,18 @@
 use core::fmt::Display;
 
+use alloc::vec::Vec;
 use bit_field::BitField;
-use pci_types::{Bar, CommandRegister, ConfigRegionAccess, EndpointHeader, StatusRegister};
+use pci_types::{
+    capability::{CapabilityIterator, PciCapability},
+    Bar, CommandRegister, ConfigRegionAccess, EndpointHeader, PciHeader, StatusRegister,
+};
 
 mod bar;
 
 pub use bar::*;
 pub use pci_types::{device_type::DeviceType, PciAddress};
+
+use crate::{Chip, RootComplex};
 
 macro_rules! struct_header {
     ($name: ident, $($more: tt)*) => {
@@ -25,6 +31,14 @@ macro_rules! struct_header {
         impl $name{
             pub fn device_type(&self)->DeviceType{
                 DeviceType::from((self.base_class, self.sub_class))
+            }
+
+            pub fn update_command<F, C: Chip>(&self, root: &mut RootComplex<C>, f: F)
+            where
+                F: FnOnce(CommandRegister) -> CommandRegister,
+            {
+                let mut header = PciHeader::new(self.address);
+                header.update_command(&*root, f);
             }
         }
     };
@@ -55,9 +69,11 @@ struct_header!(Unknown,
 
 struct_header!(Endpoint,
     pub bar: BarVec,
+    pub interrupt_pin: u8,
+    pub interrupt_line: u8,
+    pub capability_pointer: u16,
+    pub capabilities: Vec<PciCapability>
 );
-
-impl Endpoint {}
 
 impl BarHeader for EndpointHeader {
     fn read_bar<C: crate::Chip>(&self, slot: usize, access: &crate::RootComplex<C>) -> Option<Bar> {
@@ -84,6 +100,9 @@ impl Display for Endpoint {
             self.device_type()
         )?;
         write!(f, "{:?}", self.bar)?;
+        for cap in &self.capabilities {
+            writeln!(f, "  {:?}", cap)?;
+        }
 
         Ok(())
     }
