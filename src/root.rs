@@ -24,8 +24,8 @@ where
         Self { chip, mmio_base }
     }
 
-    pub fn enumerate<A: BarAllocator>(
-        &mut self,
+    fn __enumerate<A: BarAllocator>(
+        &self,
         range: Option<Range<usize>>,
         bar_alloc: Option<A>,
     ) -> PciIterator<'_, C, A> {
@@ -42,12 +42,18 @@ where
             stack: alloc::vec![Bridge::root(range.start as _)],
         }
     }
-
-    pub fn enumerate_no_modify(
+    pub fn enumerate<A: BarAllocator>(
         &mut self,
         range: Option<Range<usize>>,
+        bar_alloc: Option<A>,
+    ) -> PciIterator<'_, C, A> {
+        self.__enumerate(range, bar_alloc)
+    }
+    pub fn enumerate_no_modify(
+        &self,
+        range: Option<Range<usize>>,
     ) -> PciIterator<'_, C, SimpleBarAllocator> {
-        self.enumerate(range, None)
+        self.__enumerate(range, None)
     }
 
     pub fn read_config(&self, address: PciAddress, offset: u16) -> u32 {
