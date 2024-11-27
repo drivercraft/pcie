@@ -124,11 +124,6 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
             pci_types::HeaderType::Endpoint => {
                 let access = self.root;
                 let mut ep = pci_types::EndpointHeader::from_header(pci_header, access).unwrap();
-                ep.update_command(access, |mut cmd| {
-                    cmd.remove(CommandRegister::IO_ENABLE);
-                    cmd.remove(CommandRegister::MEMORY_ENABLE);
-                    cmd
-                });
 
                 let mut bar = ep.parse_bar(6, access);
                 let (interrupt_pin, interrupt_line) = ep.interrupt(access);
@@ -136,6 +131,12 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
                 let capabilities = ep.capabilities(access).collect::<Vec<_>>();
 
                 if let Some(a) = &mut self.allocator {
+                    ep.update_command(access, |mut cmd| {
+                        cmd.remove(CommandRegister::IO_ENABLE);
+                        cmd.remove(CommandRegister::MEMORY_ENABLE);
+                        cmd
+                    });
+
                     match &bar {
                         crate::BarVec::Memory32(bar_vec) => {
                             let new_bar_vec = bar_vec
