@@ -58,5 +58,14 @@ fn test_pcie() {
         println!("{}", header);
     }
 
+    for header in root.enumerate_keep_bar(None) {
+        match header.header {
+            pcie::Header::Endpoint(endpoint) => {
+                endpoint.update_command(header.root, |cmd| cmd);
+            }
+            _ => {}
+        }
+    }
+
     println!("test passed!");
 }

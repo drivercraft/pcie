@@ -14,7 +14,7 @@ pub use chip::{
 };
 
 pub use bar_alloc::*;
-pub use root::RootComplex;
+pub use root::{RootComplex, EnumElem};
 pub use types::*;
 
 pub trait BarAllocator {

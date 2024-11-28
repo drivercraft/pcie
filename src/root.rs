@@ -6,7 +6,7 @@ use crate::{
     BarAllocator, BarHeader, CardBusBridge, Chip, Endpoint, Header, PciAddress, PciPciBridge,
     SimpleBarAllocator, Unknown,
 };
-use core::{hint::spin_loop, ops::Range, ptr::NonNull};
+use core::{fmt::Display, hint::spin_loop, ops::Range, ptr::NonNull};
 
 const MAX_DEVICE: u8 = 31;
 const MAX_FUNCTION: u8 = 7;
@@ -25,7 +25,7 @@ where
     }
 
     fn __enumerate<A: BarAllocator>(
-        &self,
+        &mut self,
         range: Option<Range<usize>>,
         bar_alloc: Option<A>,
     ) -> PciIterator<'_, C, A> {
@@ -42,6 +42,8 @@ where
             stack: alloc::vec![Bridge::root(range.start as _)],
         }
     }
+
+    /// enumerate all devices and allocate bars.
     pub fn enumerate<A: BarAllocator>(
         &mut self,
         range: Option<Range<usize>>,
@@ -49,8 +51,10 @@ where
     ) -> PciIterator<'_, C, A> {
         self.__enumerate(range, bar_alloc)
     }
-    pub fn enumerate_no_modify(
-        &self,
+
+    /// enumerate all devices without modify bar.
+    pub fn enumerate_keep_bar(
+        &mut self,
         range: Option<Range<usize>>,
     ) -> PciIterator<'_, C, SimpleBarAllocator> {
         self.__enumerate(range, None)
@@ -75,10 +79,20 @@ impl<C: Chip> ConfigRegionAccess for RootComplex<C> {
     }
 }
 
+impl<C: Chip> ConfigRegionAccess for &mut RootComplex<C> {
+    unsafe fn read(&self, address: pci_types::PciAddress, offset: u16) -> u32 {
+        self.read_config(address, offset)
+    }
+
+    unsafe fn write(&self, address: pci_types::PciAddress, offset: u16, value: u32) {
+        self.chip.write(self.mmio_base, address, offset, value);
+    }
+}
+
 pub struct PciIterator<'a, C: Chip, A: BarAllocator> {
     /// This must only be used to read read-only fields, and must not be exposed outside this
     /// module, because it uses the same CAM as the main `PciRoot` instance.
-    root: &'a RootComplex<C>,
+    root: &'a mut RootComplex<C>,
     allocator: Option<A>,
     segment: u16,
     stack: Vec<Bridge>,
@@ -88,8 +102,8 @@ pub struct PciIterator<'a, C: Chip, A: BarAllocator> {
     is_finish: bool,
 }
 
-impl<C: Chip, A: BarAllocator> Iterator for PciIterator<'_, C, A> {
-    type Item = Header;
+impl<'a, C: Chip, A: BarAllocator> Iterator for PciIterator<'a, C, A> {
+    type Item = EnumElem<'a, C>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.is_finish {
@@ -98,7 +112,10 @@ impl<C: Chip, A: BarAllocator> Iterator for PciIterator<'_, C, A> {
                     Header::PciPciBridge(bridge) => Some(bridge),
                     _ => None,
                 });
-                return Some(value);
+                return Some(EnumElem {
+                    root: unsafe { &mut *(self.root as *mut RootComplex<C>) },
+                    header: value,
+                });
             } else {
                 self.next(None);
             }
@@ -107,12 +124,23 @@ impl<C: Chip, A: BarAllocator> Iterator for PciIterator<'_, C, A> {
     }
 }
 
+pub struct EnumElem<'a, C: Chip> {
+    pub root: &'a mut RootComplex<C>,
+    pub header: Header,
+}
+
+impl<C: Chip> Display for EnumElem<'_, C> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.header)
+    }
+}
+
 impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
     fn get_current_valid(&mut self) -> Option<Header> {
         let address = self.address();
 
         let pci_header = PciHeader::new(address);
-        let access = self.root;
+        let access = &self.root;
         let (vendor_id, device_id) = pci_header.id(access);
         if vendor_id == 0xffff {
             return None;
@@ -128,7 +156,7 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
 
         Some(match pci_header.header_type(access) {
             pci_types::HeaderType::Endpoint => {
-                let access = self.root;
+                let access = &self.root;
                 let mut ep = pci_types::EndpointHeader::from_header(pci_header, access).unwrap();
 
                 let mut bar = ep.parse_bar(6, access);
@@ -299,7 +327,7 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
                 if let Some(parent) = self.stack.pop() {
                     self.is_finish = parent.header.subordinate_bus == self.bus_max;
 
-                    parent.header.sync_bus_number(self.root);
+                    parent.header.sync_bus_number(&self.root);
                     self.function = 0;
                     return true;
                 } else {
