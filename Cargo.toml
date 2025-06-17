@@ -1,6 +1,6 @@
 [package]
 name = "pcie"
-version = "0.2.7"
+version = "0.3.0"
 edition = "2021"
 authors = ["周睿 <zrufo747@outlook.com>"]
 repository = "https://gitee.com/ZR233/pcie"
@@ -17,7 +17,12 @@ bitflags = "2"
 pci_types = "0.10"
 
 [dev-dependencies]
-bare-test = "0.1"
+bare-test = "0.4.1"
 
 [build-dependencies]
-sparreal-macros = "0.0.5"
+bare-test-macros = "0.2"
+
+
+[[test]]
+name = "test"
+harness = false

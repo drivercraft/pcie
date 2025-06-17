@@ -8,5 +8,5 @@ run test:
 
 ```shell
 cargo install ostool
-cargo test --test tests --  --show-output
+cargo test --test test --  --show-output
 ```
