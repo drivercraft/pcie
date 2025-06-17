@@ -204,7 +204,7 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
                                 if let Some(value) = bar {
                                     bar_vec
                                         .set(i, value, access)
-                                        .inspect_err(|e| error!("{:?}", e))
+                                        .inspect_err(|e| error!("{e:?}"))
                                         .unwrap();
                                 }
                             }

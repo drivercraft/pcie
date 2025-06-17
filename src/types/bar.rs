@@ -15,9 +15,9 @@ pub enum BarVec {
 impl Debug for BarVec {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Memory32(arg0) => write!(f, "{:?}", arg0),
-            Self::Memory64(arg0) => write!(f, "{:?}", arg0),
-            Self::Io(arg0) => write!(f, "{:?}", arg0),
+            Self::Memory32(arg0) => write!(f, "{arg0:?}"),
+            Self::Memory64(arg0) => write!(f, "{arg0:?}"),
+            Self::Io(arg0) => write!(f, "{arg0:?}"),
         }
     }
 }
@@ -178,7 +178,7 @@ impl<T: Debug> Debug for BarVecT<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         for (i, bar) in self.data.iter().enumerate() {
             if let Some(bar) = bar {
-                writeln!(f, "BAR{}: {:?}", i, bar)?;
+                writeln!(f, "BAR{i}: {bar:?}")?;
             }
         }
         Ok(())

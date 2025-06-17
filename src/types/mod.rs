@@ -54,8 +54,8 @@ pub enum Header {
 impl Display for Header {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Header::PciPciBridge(v) => write!(f, "{}", v),
-            Header::Endpoint(v) => write!(f, "{}", v),
+            Header::PciPciBridge(v) => write!(f, "{v}"),
+            Header::Endpoint(v) => write!(f, "{v}"),
             Header::CardBusBridge(_card_bus_bridge) => write!(f, "CardBusBridge"),
             Header::Unknown(unknown) => write!(f, "Unknown({:?})", unknown.kind),
         }
@@ -100,7 +100,7 @@ impl Display for Endpoint {
         )?;
         write!(f, "{:?}", self.bar)?;
         for cap in &self.capabilities {
-            writeln!(f, "  {:?}", cap)?;
+            writeln!(f, "  {cap:?}")?;
         }
 
         Ok(())
