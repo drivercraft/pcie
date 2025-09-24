@@ -4,8 +4,8 @@ use pci_types::{CommandRegister, ConfigRegionAccess, PciHeader, StatusRegister};
 
 use crate::chip::PcieController;
 use crate::{
-    BarHeader, CardBusBridge, Endpoint, Header, PciAddress, PciPciBridge, SimpleBarAllocator,
-    Unknown,
+    BarHeader, CardBusBridge, Endpoint, Header, PciAddress, PciPciBridge, PciSpace32, PciSpace64,
+    SimpleBarAllocator, Unknown,
 };
 use core::{fmt::Display, hint::spin_loop, ops::Range};
 
@@ -14,23 +14,54 @@ const MAX_FUNCTION: u8 = 7;
 
 pub struct RootComplex {
     pub(crate) controller: PcieController,
+    pub(crate) allocator: Option<SimpleBarAllocator>,
 }
 
 impl RootComplex {
-    pub fn new(controller: PcieController) -> Self {
-        Self { controller }
+    /// Create a RootComplex with optional pre-configured BAR allocation spaces.
+    /// If `space32`/`space64` provided, an internal SimpleBarAllocator will be created.
+    pub fn new(
+        controller: PcieController,
+        space32: Option<PciSpace32>,
+        space64: Option<PciSpace64>,
+    ) -> Self {
+        let mut allocator = None;
+        if space32.is_some() || space64.is_some() {
+            let mut a = SimpleBarAllocator::default();
+            if let Some(s32) = space32 {
+                a.set_mem32(s32.address, s32.size);
+            }
+            if let Some(s64) = space64 {
+                a.set_mem64(s64.address, s64.size);
+            }
+            allocator = Some(a);
+        }
+        Self {
+            controller,
+            allocator,
+        }
     }
 
-    fn __enumerate(
-        &mut self,
-        range: Option<Range<usize>>,
-        bar_alloc: Option<SimpleBarAllocator>,
-    ) -> PciIterator<'_> {
+    pub fn new_generic(
+        mmio_base: core::ptr::NonNull<u8>,
+        space32: Option<PciSpace32>,
+        space64: Option<PciSpace64>,
+    ) -> Self {
+        let ctrl = PcieController::new(crate::chip::PcieGeneric::new(mmio_base));
+        Self::new(ctrl, space32, space64)
+    }
+
+    /// Set/replace the internal BAR allocator.
+    pub fn set_allocator(&mut self, allocator: SimpleBarAllocator) {
+        self.allocator = Some(allocator);
+    }
+
+    fn __enumerate(&mut self, range: Option<Range<usize>>, do_allocate: bool) -> PciIterator<'_> {
         let range = range.unwrap_or_else(|| 0..0x100);
 
         PciIterator {
             root: self,
-            allocator: bar_alloc,
+            do_allocate,
             segment: 0,
             bus_max: (range.end - 1) as _,
             function: 0,
@@ -41,17 +72,13 @@ impl RootComplex {
     }
 
     /// enumerate all devices and allocate bars.
-    pub fn enumerate(
-        &mut self,
-        range: Option<Range<usize>>,
-        bar_alloc: Option<SimpleBarAllocator>,
-    ) -> PciIterator<'_> {
-        self.__enumerate(range, bar_alloc)
+    pub fn enumerate(&mut self, range: Option<Range<usize>>) -> PciIterator<'_> {
+        self.__enumerate(range, true)
     }
 
     /// enumerate all devices without modify bar.
     pub fn enumerate_keep_bar(&mut self, range: Option<Range<usize>>) -> PciIterator<'_> {
-        self.__enumerate(range, None)
+        self.__enumerate(range, false)
     }
 
     pub fn read_config(&self, address: PciAddress, offset: u16) -> u32 {
@@ -88,7 +115,7 @@ pub struct PciIterator<'a> {
     /// This must only be used to read read-only fields, and must not be exposed outside this
     /// module, because it uses the same CAM as the main `PciRoot` instance.
     root: &'a mut RootComplex,
-    allocator: Option<SimpleBarAllocator>,
+    do_allocate: bool,
     segment: u16,
     stack: Vec<Bridge>,
     bus_max: u8,
@@ -149,54 +176,81 @@ impl PciIterator<'_> {
 
         self.is_mulitple_function = has_multiple_functions;
 
-        Some(match pci_header.header_type(access) {
+        Some(match pci_header.header_type(&*self.root) {
             pci_types::HeaderType::Endpoint => {
-                let access = &self.root;
-                let mut ep = pci_types::EndpointHeader::from_header(pci_header, access).unwrap();
+                // Create endpoint header and read current state
+                let mut ep = {
+                    let access = &*self.root;
+                    pci_types::EndpointHeader::from_header(pci_header, access).unwrap()
+                };
 
-                let mut bar = ep.parse_bar(6, access);
-                let (interrupt_pin, interrupt_line) = ep.interrupt(access);
-                let capability_pointer = ep.capability_pointer(access);
-                let capabilities = ep.capabilities(access).collect::<Vec<_>>();
+                let mut bar = {
+                    let access = &*self.root;
+                    ep.parse_bar(6, access)
+                };
+                let (interrupt_pin, interrupt_line) = {
+                    let access = &*self.root;
+                    ep.interrupt(access)
+                };
+                let capability_pointer = {
+                    let access = &*self.root;
+                    ep.capability_pointer(access)
+                };
+                let capabilities = {
+                    let access = &*self.root;
+                    ep.capabilities(access).collect::<Vec<_>>()
+                };
 
-                if let Some(a) = &mut self.allocator {
-                    ep.update_command(access, |mut cmd| {
-                        cmd.remove(CommandRegister::IO_ENABLE);
-                        cmd.remove(CommandRegister::MEMORY_ENABLE);
-                        cmd
-                    });
+                // Allocate BARs if requested and allocator present
+                if self.do_allocate && self.root.allocator.is_some() {
+                    // Disable IO/MEM before reprogramming BARs
+                    {
+                        let access = &*self.root;
+                        ep.update_command(access, |mut cmd| {
+                            cmd.remove(CommandRegister::IO_ENABLE);
+                            cmd.remove(CommandRegister::MEMORY_ENABLE);
+                            cmd
+                        });
+                    }
 
                     match &bar {
                         crate::BarVec::Memory32(bar_vec) => {
-                            let new_bar_vec = bar_vec
-                                .iter()
-                                .map(|old| {
-                                    old.clone().map(|ref b| a.alloc_memory32(b.size).unwrap())
-                                })
-                                .collect::<Vec<_>>();
-
-                            for (i, bar) in new_bar_vec.into_iter().enumerate() {
-                                if let Some(value) = bar {
+                            // Compute new values with mutable allocator, then write using immutable access
+                            let new_vals = {
+                                let a = self.root.allocator.as_mut().unwrap();
+                                bar_vec
+                                    .iter()
+                                    .map(|old| {
+                                        old.clone().map(|ref b| a.alloc_memory32(b.size).unwrap())
+                                    })
+                                    .collect::<alloc::vec::Vec<_>>()
+                            };
+                            let access = &*self.root;
+                            for (i, v) in new_vals.into_iter().enumerate() {
+                                if let Some(value) = v {
                                     bar_vec.set(i, value, access).unwrap();
                                 }
                             }
                         }
                         crate::BarVec::Memory64(bar_vec) => {
-                            let new_bar_vec = bar_vec
-                                .iter()
-                                .map(|old| {
-                                    old.clone().map(|ref b| {
-                                        if b.address > 0 && b.address < u32::MAX as u64 {
-                                            a.alloc_memory32(b.size as u32).unwrap() as u64
-                                        } else {
-                                            a.alloc_memory64(b.size).unwrap()
-                                        }
+                            let new_vals = {
+                                let a = self.root.allocator.as_mut().unwrap();
+                                bar_vec
+                                    .iter()
+                                    .map(|old| {
+                                        old.clone().map(|ref b| {
+                                            if b.address > 0 && b.address < u32::MAX as u64 {
+                                                a.alloc_memory32(b.size as u32).unwrap() as u64
+                                            } else {
+                                                a.alloc_memory64(b.size).unwrap()
+                                            }
+                                        })
                                     })
-                                })
-                                .collect::<Vec<_>>();
-
-                            for (i, bar) in new_bar_vec.into_iter().enumerate() {
-                                if let Some(value) = bar {
+                                    .collect::<alloc::vec::Vec<_>>()
+                            };
+                            let access = &*self.root;
+                            for (i, v) in new_vals.into_iter().enumerate() {
+                                if let Some(value) = v {
                                     bar_vec
                                         .set(i, value, access)
                                         .inspect_err(|e| error!("{e:?}"))
@@ -207,6 +261,8 @@ impl PciIterator<'_> {
                         crate::BarVec::Io(_bar_vec_t) => {}
                     }
 
+                    // Reload BARs after programming
+                    let access = &*self.root;
                     bar = ep.parse_bar(6, access);
                 }
 

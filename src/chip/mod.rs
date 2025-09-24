@@ -7,22 +7,6 @@ use crate::PciAddress;
 
 pub mod generic;
 
-pub trait Chip: Send {
-    /// Performs a PCI read at `address` with `offset`.
-    ///
-    /// # Safety
-    ///
-    /// `address` and `offset` must be valid for PCI reads.
-    unsafe fn read(&self, mmio_base: NonNull<u8>, address: PciAddress, offset: u16) -> u32;
-
-    /// Performs a PCI write at `address` with `offset`.
-    ///
-    /// # Safety
-    ///
-    /// `address` and `offset` must be valid for PCI writes.
-    unsafe fn write(&self, mmio_base: NonNull<u8>, address: PciAddress, offset: u16, value: u32);
-}
-
 pub trait Controller: Send + 'static {
     /// Performs a PCI read at `address` with `offset`.
     ///
@@ -73,13 +57,13 @@ impl ChipRaw {
     }
 }
 
-pub struct PcieGeric {
+pub struct PcieGeneric {
     mmio_base: NonNull<u8>,
 }
 
-unsafe impl Send for PcieGeric {}
+unsafe impl Send for PcieGeneric {}
 
-impl PcieGeric {
+impl PcieGeneric {
     pub fn new(mmio_base: NonNull<u8>) -> Self {
         Self { mmio_base }
     }
@@ -96,7 +80,7 @@ impl PcieGeric {
     }
 }
 
-impl Controller for PcieGeric {
+impl Controller for PcieGeneric {
     fn read(&mut self, address: PciAddress, offset: u16) -> u32 {
         let ptr = self.mmio_addr(self.mmio_base, address, offset);
         unsafe { ptr.as_ptr().read_volatile() }
