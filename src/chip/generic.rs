@@ -1,42 +1,33 @@
 use core::ptr::NonNull;
 
-use crate::{root::RootComplex, PciAddress};
+use crate::root::RootComplex;
+use core::ops::{Deref, DerefMut};
 
-use super::Chip;
+use super::{PcieController, PcieGeric};
 
-pub struct Generic {}
+// 保留原有 Generic 名称作为语义占位，以减少外部改动。
+pub struct Generic;
 
-impl Generic {}
-
-impl Chip for Generic {
-    unsafe fn read(&self, mmio_base: NonNull<u8>, address: PciAddress, offset: u16) -> u32 {
-        let ptr = self.mmio_addr(mmio_base, address, offset);
-        ptr.as_ptr().read_volatile()
-    }
-
-    unsafe fn write(&self, mmio_base: NonNull<u8>, address: PciAddress, offset: u16, value: u32) {
-        let ptr = self.mmio_addr(mmio_base, address, offset);
-        ptr.as_ptr().write_volatile(value);
-    }
-}
-
-impl Generic {
-    fn mmio_addr(&self, mmio_base: NonNull<u8>, address: PciAddress, offset: u16) -> NonNull<u32> {
-        let address = (address.bus() as u32) << 20
-            | (address.device() as u32) << 15
-            | (address.function() as u32) << 12
-            | offset as u32;
-        unsafe {
-            let ptr: NonNull<u32> = mmio_base.cast().add((address >> 2) as usize);
-            ptr
-        }
-    }
-}
-
-pub type RootComplexGeneric = RootComplex<Generic>;
+// 兼容旧 API：提供 RootComplexGeneric 包装器，保留 `new(mmio_base)` 构造并透传方法。
+pub struct RootComplexGeneric(pub RootComplex);
 
 impl RootComplexGeneric {
+    // 旧 API：通过 mmio_base 创建一个通用控制器，再包装成 RootComplex
     pub fn new(mmio_base: NonNull<u8>) -> Self {
-        RootComplex::new_with_chip(mmio_base, Generic {})
+        let ctrl = PcieController::new(PcieGeric::new(mmio_base));
+        RootComplexGeneric(RootComplex::new(ctrl))
+    }
+}
+
+impl Deref for RootComplexGeneric {
+    type Target = RootComplex;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for RootComplexGeneric {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }

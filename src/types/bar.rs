@@ -1,9 +1,7 @@
 use core::{fmt::Debug, ops::Index};
 
 use alloc::vec::Vec;
-use pci_types::{Bar, BarWriteError, EndpointHeader, HeaderType, PciAddress, PciHeader};
-
-use crate::{Chip, RootComplex};
+use pci_types::{Bar, BarWriteError, ConfigRegionAccess, EndpointHeader, HeaderType, PciAddress, PciHeader};
 
 #[derive(Clone)]
 pub enum BarVec {
@@ -42,13 +40,13 @@ pub struct BarIO {
 }
 
 pub(crate) trait BarHeader: Sized {
-    fn read_bar<C: Chip>(&self, slot: usize, access: &RootComplex<C>) -> Option<Bar>;
+    fn read_bar<A: ConfigRegionAccess>(&self, slot: usize, access: &A) -> Option<Bar>;
 
     fn address(&self) -> PciAddress;
 
     fn header_type(&self) -> HeaderType;
 
-    fn parse_bar<C: Chip>(&self, slot_size: usize, access: &RootComplex<C>) -> BarVec {
+    fn parse_bar<A: ConfigRegionAccess>(&self, slot_size: usize, access: &A) -> BarVec {
         let bar0 = match self.read_bar(0, access) {
             Some(bar0) => bar0,
             None => {
@@ -186,11 +184,11 @@ impl<T: Debug> Debug for BarVecT<T> {
 }
 
 impl BarVecT<Bar32> {
-    pub(crate) fn set<C: Chip>(
+    pub(crate) fn set<A: ConfigRegionAccess>(
         &self,
         index: usize,
         value: u32,
-        access: &RootComplex<C>,
+        access: &A,
     ) -> core::result::Result<(), BarWriteError> {
         let header = PciHeader::new(self.address);
         match self.header_type {
@@ -208,11 +206,11 @@ impl BarVecT<Bar32> {
 }
 
 impl BarVecT<Bar64> {
-    pub(crate) fn set<C: Chip>(
+    pub(crate) fn set<A: ConfigRegionAccess>(
         &self,
         index: usize,
         value: u64,
-        access: &RootComplex<C>,
+        access: &A,
     ) -> core::result::Result<(), BarWriteError> {
         let header = PciHeader::new(self.address);
         match self.header_type {

@@ -11,7 +11,7 @@ pub use pci_types::{
     capability::PciCapability, device_type::DeviceType, CommandRegister, PciAddress, StatusRegister,
 };
 
-use crate::{Chip, RootComplex};
+use crate::RootComplex;
 
 macro_rules! struct_header {
     ($name: ident, $($more: tt)*) => {
@@ -32,7 +32,7 @@ macro_rules! struct_header {
                 DeviceType::from((self.base_class, self.sub_class))
             }
 
-            pub fn update_command<F, C: Chip>(&self, root: &mut RootComplex<C>, f: F)
+            pub fn update_command<F>(&self, root: &mut RootComplex, f: F)
             where
                 F: FnOnce(CommandRegister) -> CommandRegister,
             {
@@ -75,7 +75,7 @@ struct_header!(Endpoint,
 );
 
 impl BarHeader for EndpointHeader {
-    fn read_bar<C: crate::Chip>(&self, slot: usize, access: &crate::RootComplex<C>) -> Option<Bar> {
+    fn read_bar<A: ConfigRegionAccess>(&self, slot: usize, access: &A) -> Option<Bar> {
         self.bar(slot as u8, access)
     }
 

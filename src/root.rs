@@ -2,33 +2,30 @@ use alloc::vec::Vec;
 use log::error;
 use pci_types::{CommandRegister, ConfigRegionAccess, PciHeader, StatusRegister};
 
+use crate::chip::PcieController;
 use crate::{
-    BarAllocator, BarHeader, CardBusBridge, Chip, Endpoint, Header, PciAddress, PciPciBridge,
-    SimpleBarAllocator, Unknown,
+    BarHeader, CardBusBridge, Endpoint, Header, PciAddress, PciPciBridge, SimpleBarAllocator,
+    Unknown,
 };
-use core::{fmt::Display, hint::spin_loop, ops::Range, ptr::NonNull};
+use core::{fmt::Display, hint::spin_loop, ops::Range};
 
 const MAX_DEVICE: u8 = 31;
 const MAX_FUNCTION: u8 = 7;
 
-pub struct RootComplex<C: Chip> {
-    pub(crate) chip: C,
-    pub(crate) mmio_base: NonNull<u8>,
+pub struct RootComplex {
+    pub(crate) controller: PcieController,
 }
 
-impl<C> RootComplex<C>
-where
-    C: Chip,
-{
-    pub fn new_with_chip(mmio_base: NonNull<u8>, chip: C) -> Self {
-        Self { chip, mmio_base }
+impl RootComplex {
+    pub fn new(controller: PcieController) -> Self {
+        Self { controller }
     }
 
-    fn __enumerate<A: BarAllocator>(
+    fn __enumerate(
         &mut self,
         range: Option<Range<usize>>,
-        bar_alloc: Option<A>,
-    ) -> PciIterator<'_, C, A> {
+        bar_alloc: Option<SimpleBarAllocator>,
+    ) -> PciIterator<'_> {
         let range = range.unwrap_or_else(|| 0..0x100);
 
         PciIterator {
@@ -44,56 +41,54 @@ where
     }
 
     /// enumerate all devices and allocate bars.
-    pub fn enumerate<A: BarAllocator>(
+    pub fn enumerate(
         &mut self,
         range: Option<Range<usize>>,
-        bar_alloc: Option<A>,
-    ) -> PciIterator<'_, C, A> {
+        bar_alloc: Option<SimpleBarAllocator>,
+    ) -> PciIterator<'_> {
         self.__enumerate(range, bar_alloc)
     }
 
     /// enumerate all devices without modify bar.
-    pub fn enumerate_keep_bar(
-        &mut self,
-        range: Option<Range<usize>>,
-    ) -> PciIterator<'_, C, SimpleBarAllocator> {
+    pub fn enumerate_keep_bar(&mut self, range: Option<Range<usize>>) -> PciIterator<'_> {
         self.__enumerate(range, None)
     }
 
     pub fn read_config(&self, address: PciAddress, offset: u16) -> u32 {
-        unsafe { self.chip.read(self.mmio_base, address, offset) }
+        // PcieController internally manages mutability; see its UnsafeCell usage
+        unsafe { self.controller.read(address, offset) }
     }
 
     pub fn write_config(&mut self, address: PciAddress, offset: u16, value: u32) {
-        unsafe { self.chip.write(self.mmio_base, address, offset, value) }
+        unsafe { self.controller.write(address, offset, value) }
     }
 }
 
-impl<C: Chip> ConfigRegionAccess for RootComplex<C> {
+impl ConfigRegionAccess for RootComplex {
     unsafe fn read(&self, address: pci_types::PciAddress, offset: u16) -> u32 {
         self.read_config(address, offset)
     }
 
     unsafe fn write(&self, address: pci_types::PciAddress, offset: u16, value: u32) {
-        self.chip.write(self.mmio_base, address, offset, value);
+        self.controller.write(address, offset, value);
     }
 }
 
-impl<C: Chip> ConfigRegionAccess for &mut RootComplex<C> {
+impl ConfigRegionAccess for &mut RootComplex {
     unsafe fn read(&self, address: pci_types::PciAddress, offset: u16) -> u32 {
         self.read_config(address, offset)
     }
 
     unsafe fn write(&self, address: pci_types::PciAddress, offset: u16, value: u32) {
-        self.chip.write(self.mmio_base, address, offset, value);
+        self.controller.write(address, offset, value);
     }
 }
 
-pub struct PciIterator<'a, C: Chip, A: BarAllocator> {
+pub struct PciIterator<'a> {
     /// This must only be used to read read-only fields, and must not be exposed outside this
     /// module, because it uses the same CAM as the main `PciRoot` instance.
-    root: &'a mut RootComplex<C>,
-    allocator: Option<A>,
+    root: &'a mut RootComplex,
+    allocator: Option<SimpleBarAllocator>,
     segment: u16,
     stack: Vec<Bridge>,
     bus_max: u8,
@@ -102,8 +97,8 @@ pub struct PciIterator<'a, C: Chip, A: BarAllocator> {
     is_finish: bool,
 }
 
-impl<'a, C: Chip, A: BarAllocator> Iterator for PciIterator<'a, C, A> {
-    type Item = EnumElem<'a, C>;
+impl<'a> Iterator for PciIterator<'a> {
+    type Item = EnumElem<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.is_finish {
@@ -113,7 +108,7 @@ impl<'a, C: Chip, A: BarAllocator> Iterator for PciIterator<'a, C, A> {
                     _ => None,
                 });
                 return Some(EnumElem {
-                    root: unsafe { &mut *(self.root as *mut RootComplex<C>) },
+                    root: unsafe { &mut *(self.root as *mut RootComplex) },
                     header: value,
                 });
             } else {
@@ -124,18 +119,18 @@ impl<'a, C: Chip, A: BarAllocator> Iterator for PciIterator<'a, C, A> {
     }
 }
 
-pub struct EnumElem<'a, C: Chip> {
-    pub root: &'a mut RootComplex<C>,
+pub struct EnumElem<'a> {
+    pub root: &'a mut RootComplex,
     pub header: Header,
 }
 
-impl<C: Chip> Display for EnumElem<'_, C> {
+impl Display for EnumElem<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.header)
     }
 }
 
-impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
+impl PciIterator<'_> {
     fn get_current_valid(&mut self) -> Option<Header> {
         let address = self.address();
 

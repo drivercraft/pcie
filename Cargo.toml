@@ -15,9 +15,11 @@ log = "0.4"
 bit_field = "0.10"
 bitflags = "2"
 pci_types = "0.10"
+thiserror = {version="2", default-features = false}
+rdif-pcie = {path="/home/zhourui/opensource/rdrive/interface/rdif-pcie"}
 
 [dev-dependencies]
-bare-test = "0.4.1"
+bare-test = "0.7"
 
 [build-dependencies]
 bare-test-macros = "0.2"
