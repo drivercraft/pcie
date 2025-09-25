@@ -1,6 +1,6 @@
 [package]
 name = "pcie"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 authors = ["周睿 <zrufo747@outlook.com>"]
 repository = "https://gitee.com/ZR233/pcie"
@@ -16,7 +16,7 @@ bit_field = "0.10"
 bitflags = "2"
 pci_types = "0.10"
 thiserror = {version="2", default-features = false}
-rdif-pcie = {path="/home/zhourui/opensource/rdrive/interface/rdif-pcie"}
+rdif-pcie = "0.1"
 enum_dispatch = "0.3"
 
 [dev-dependencies]
