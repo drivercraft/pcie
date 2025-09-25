@@ -1,7 +1,8 @@
 mod bar;
-pub mod config;
+mod config;
 
 pub use bar::*;
+pub use config::*;
 pub use pci_types::{
     capability::PciCapability, device_type::DeviceType, CommandRegister, PciAddress, StatusRegister,
 };

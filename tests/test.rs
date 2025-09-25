@@ -14,7 +14,7 @@ mod tests {
         println,
     };
     use log::info;
-    use pcie::{PciSpace32, PciSpace64, RootComplex};
+    use pcie::{CommandRegister, PciSpace32, PciSpace64, RootComplex};
 
     #[test]
     fn test_iter() {
@@ -66,15 +66,30 @@ mod tests {
             }
         }
 
-        for ep in root.enumerate(None) {
+        for mut ep in root.enumerate(None) {
             println!("{}", ep);
+            println!("  BARs:");
+            for i in 0..6 {
+                if let Some(bar) = ep.bar(i) {
+                    println!("    BAR{}: {:#x?}", i, bar);
+                }
+            }
+            // println!("  IRQ: {:?}", ep.interrupt_line());
+            for cap in ep.capabilities() {
+                println!("  {:?}", cap);
+            }
+
+            ep.update_command(|mut cmd| {
+                cmd.insert(CommandRegister::MEMORY_ENABLE);
+                cmd
+            });
         }
 
-        for  header in root.enumerate_keep_bar(None) {
-            // if let pcie::Header::Endpoint(endpoint) = header.header {
-                // endpoint.update_command( header.root, |cmd| cmd);
-            // }
-        }
+        // for header in root.enumerate_keep_bar(None) {
+        //     // if let pcie::Header::Endpoint(endpoint) = header.header {
+        //     // endpoint.update_command( header.root, |cmd| cmd);
+        //     // }
+        // }
 
         println!("test passed!");
     }

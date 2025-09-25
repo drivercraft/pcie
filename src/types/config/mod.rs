@@ -5,14 +5,16 @@ mod endpoint;
 mod pci_bridge;
 mod unknown;
 
+pub use card_bridge::*;
 pub use endpoint::Endpoint;
 pub use pci_bridge::*;
-use pci_types::{CommandRegister, HeaderType, PciAddress, PciHeader, StatusRegister};
+pub use unknown::*;
 
-use crate::{
-    config::{card_bridge::CardBusBridge, unknown::Unknown},
-    PcieController,
+use pci_types::{
+    CommandRegister, ConfigRegionAccess, HeaderType, PciAddress, PciHeader, StatusRegister,
 };
+
+use crate::PcieController;
 
 #[derive(Debug)]
 pub enum PciConfigSpace {
@@ -93,6 +95,14 @@ impl PciHeaderBase {
 
     pub fn device_id(&self) -> u16 {
         self.did
+    }
+
+    pub fn read(&self, offset: u16) -> u32 {
+        unsafe { self.root.read(self.address(), offset) }
+    }
+
+    pub fn write(&self, offset: u16, value: u32) {
+        unsafe { self.root.write(self.address(), offset, value) }
     }
 }
 

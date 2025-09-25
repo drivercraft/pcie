@@ -1,7 +1,9 @@
 use core::{fmt::Debug, ops::Index};
 
 use alloc::vec::Vec;
-use pci_types::{Bar, BarWriteError, ConfigRegionAccess, EndpointHeader, HeaderType, PciAddress, PciHeader};
+use pci_types::{
+    Bar, BarWriteError, ConfigRegionAccess, EndpointHeader, HeaderType, PciAddress, PciHeader,
+};
 
 #[derive(Clone)]
 pub enum BarVec {
@@ -238,5 +240,9 @@ impl<T> Index<usize> for BarVecT<T> {
 impl<T> BarVecT<T> {
     pub fn iter(&self) -> impl Iterator<Item = &Option<T>> {
         self.data.iter()
+    }
+
+    pub fn get(&self, index: usize) -> Option<&T> {
+        self.data.get(index).and_then(|v| v.as_ref())
     }
 }
