@@ -2,8 +2,7 @@ use core::{fmt::Debug, ops::Deref};
 
 use bit_field::BitField;
 use pci_types::{ConfigRegionAccess, PciPciBridgeHeader};
-
-use crate::chip::PcieController;
+use rdif_pcie::ConfigAccess;
 
 use super::PciHeaderBase;
 
@@ -37,7 +36,7 @@ impl PciPciBridge {
         self.header.as_ref().expect("Not a root bridge")
     }
 
-    fn access(&self) -> &PcieController {
+    fn access(&self) -> &ConfigAccess {
         &self.base.as_ref().expect("Not a root bridge").root
     }
 

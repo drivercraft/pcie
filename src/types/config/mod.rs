@@ -8,6 +8,7 @@ mod unknown;
 pub use card_bridge::*;
 pub use endpoint::Endpoint;
 pub use pci_bridge::*;
+use rdif_pcie::ConfigAccess;
 pub use unknown::*;
 
 use pci_types::{
@@ -15,7 +16,6 @@ use pci_types::{
 };
 
 use crate::chip::PcieController;
-
 
 #[derive(Debug)]
 pub enum PciConfigSpace {
@@ -28,12 +28,13 @@ pub enum PciConfigSpace {
 pub struct PciHeaderBase {
     vid: u16,
     did: u16,
-    root: PcieController,
+    root: ConfigAccess,
     header: PciHeader,
 }
 
 impl PciHeaderBase {
-    pub(crate) fn new(root: PcieController, address: PciAddress) -> Option<Self> {
+    pub(crate) fn new(root: &mut PcieController, address: PciAddress) -> Option<Self> {
+        let root = root.config_access(address);
         let header = PciHeader::new(address);
         let (vid, did) = header.id(&root);
         if vid == 0xffff {

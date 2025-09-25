@@ -14,7 +14,9 @@ mod tests {
         println,
     };
     use log::info;
-    use pcie::{CommandRegister, PciSpace32, PciSpace64, RootComplex};
+    use pcie::{
+        enumerate_by_controller, CommandRegister, PciMem32, PciMem64, PcieController, PcieGeneric,
+    };
 
     #[test]
     fn test_iter() {
@@ -43,30 +45,35 @@ mod tests {
 
         info!("Init PCIE @{base_vaddr:?}");
 
-        let mut root = RootComplex::new_generic(base_vaddr);
+        let i = PcieGeneric::new(base_vaddr);
+        let mut drv = PcieController::new(i);
 
         for range in pcie.ranges().unwrap() {
             info!("{range:?}");
             match range.space {
                 PciSpace::Memory32 => {
-                    root.set_space32(PciSpace32 {
-                        address: range.cpu_address as u32,
-                        size: range.size as _,
-                        prefetchable: range.prefetchable,
-                    });
+                    drv.set_mem32(
+                        PciMem32 {
+                            address: range.cpu_address as _,
+                            size: range.size as _,
+                        },
+                        range.prefetchable,
+                    );
                 }
                 PciSpace::Memory64 => {
-                    root.set_space64(PciSpace64 {
-                        address: range.cpu_address,
-                        size: range.size as _,
-                        prefetchable: range.prefetchable,
-                    });
+                    drv.set_mem64(
+                        PciMem64 {
+                            address: range.cpu_address as _,
+                            size: range.size as _,
+                        },
+                        range.prefetchable,
+                    );
                 }
                 _ => {}
             }
         }
 
-        for mut ep in root.enumerate(None) {
+        for mut ep in enumerate_by_controller(&mut drv, None) {
             println!("{}", ep);
             println!("  BARs:");
             for i in 0..6 {

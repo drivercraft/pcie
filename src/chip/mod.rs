@@ -1,59 +1,9 @@
-use core::{cell::UnsafeCell, ptr::NonNull};
+use core::ptr::NonNull;
 
-use alloc::{boxed::Box, sync::Arc};
-use pci_types::ConfigRegionAccess;
+pub use rdif_pcie::PcieController;
+use rdif_pcie::{DriverGeneric, Interface};
 
 use crate::PciAddress;
-
-pub trait Controller: Send + 'static {
-    /// Performs a PCI read at `address` with `offset`.
-    ///
-    /// # Safety
-    ///
-    /// `address` and `offset` must be valid for PCI reads.
-    fn read(&mut self, address: PciAddress, offset: u16) -> u32;
-
-    /// Performs a PCI write at `address` with `offset`.
-    ///
-    /// # Safety
-    ///
-    /// `address` and `offset` must be valid for PCI writes.
-    fn write(&mut self, address: PciAddress, offset: u16, value: u32);
-}
-
-#[derive(Clone)]
-pub struct PcieController {
-    chip: Arc<ChipRaw>,
-}
-
-impl PcieController {
-    pub fn new(chip: impl Controller) -> Self {
-        Self {
-            chip: Arc::new(ChipRaw::new(chip)),
-        }
-    }
-}
-
-impl ConfigRegionAccess for PcieController {
-    unsafe fn read(&self, address: PciAddress, offset: u16) -> u32 {
-        unsafe { (*self.chip.0.get()).read(address, offset) }
-    }
-
-    unsafe fn write(&self, address: PciAddress, offset: u16, value: u32) {
-        unsafe { (*self.chip.0.get()).write(address, offset, value) }
-    }
-}
-
-struct ChipRaw(UnsafeCell<Box<dyn Controller>>);
-
-unsafe impl Send for ChipRaw {}
-unsafe impl Sync for ChipRaw {}
-
-impl ChipRaw {
-    fn new(chip: impl Controller) -> Self {
-        Self(UnsafeCell::new(Box::new(chip)))
-    }
-}
 
 pub struct PcieGeneric {
     mmio_base: NonNull<u8>,
@@ -78,7 +28,17 @@ impl PcieGeneric {
     }
 }
 
-impl Controller for PcieGeneric {
+impl DriverGeneric for PcieGeneric {
+    fn open(&mut self) -> Result<(), rdif_pcie::KError> {
+        Ok(())
+    }
+
+    fn close(&mut self) -> Result<(), rdif_pcie::KError> {
+        Ok(())
+    }
+}
+
+impl Interface for PcieGeneric {
     fn read(&mut self, address: PciAddress, offset: u16) -> u32 {
         let ptr = self.mmio_addr(self.mmio_base, address, offset);
         unsafe { ptr.as_ptr().read_volatile() }

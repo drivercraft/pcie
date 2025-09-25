@@ -8,8 +8,9 @@ use pci_types::{
     capability::PciCapability, device_type::DeviceType, Bar, CommandRegister, ConfigRegionAccess,
     EndpointHeader, PciAddress,
 };
+use rdif_pcie::ConfigAccess;
 
-use crate::{chip::PcieController, BarHeader, BarVec, SimpleBarAllocator};
+use crate::{BarHeader, BarVec, SimpleBarAllocator};
 
 pub struct Endpoint {
     base: super::PciHeaderBase,
@@ -90,7 +91,7 @@ impl Endpoint {
             .update_interrupt(&self.base.root, |(pin, _)| (pin, line));
     }
 
-    fn access(&self) -> &PcieController {
+    fn access(&self) -> &ConfigAccess {
         &self.base.root
     }
 
