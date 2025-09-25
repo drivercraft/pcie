@@ -5,6 +5,7 @@ use bit_field::BitField;
 use pci_types::{Bar, ConfigRegionAccess, EndpointHeader, PciHeader};
 
 mod bar;
+pub mod config;
 
 pub use bar::*;
 pub use pci_types::{
@@ -74,19 +75,7 @@ struct_header!(Endpoint,
     pub capabilities: Vec<PciCapability>
 );
 
-impl BarHeader for EndpointHeader {
-    fn read_bar<A: ConfigRegionAccess>(&self, slot: usize, access: &A) -> Option<Bar> {
-        self.bar(slot as u8, access)
-    }
 
-    fn address(&self) -> PciAddress {
-        self.header().address()
-    }
-
-    fn header_type(&self) -> pci_types::HeaderType {
-        pci_types::HeaderType::Endpoint
-    }
-}
 
 impl Display for Endpoint {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -116,6 +105,7 @@ struct_header!(PciPciBridge,
 );
 
 impl PciPciBridge {
+
     pub fn update_bus_number<F>(&self, access: impl ConfigRegionAccess, f: F)
     where
         F: FnOnce(BusNumber) -> BusNumber,

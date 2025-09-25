@@ -5,8 +5,6 @@ use pci_types::ConfigRegionAccess;
 
 use crate::PciAddress;
 
-pub mod generic;
-
 pub trait Controller: Send + 'static {
     /// Performs a PCI read at `address` with `offset`.
     ///

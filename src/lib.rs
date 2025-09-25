@@ -2,6 +2,7 @@
 
 extern crate alloc;
 
+#[macro_use]
 extern crate log;
 
 mod addr_alloc;
@@ -11,13 +12,10 @@ pub mod err;
 mod root;
 mod types;
 
-pub use chip::{
-    generic::{Generic, RootComplexGeneric},
-    PcieController, PcieGeneric,
-};
+pub use chip::{PcieController, PcieGeneric};
 
 pub use bar_alloc::*;
-pub use root::{EnumElem, RootComplex};
+pub use root::RootComplex;
 pub use types::*;
 
 #[derive(Clone, Copy, Debug)]
