@@ -55,7 +55,10 @@ impl RootComplex {
     }
 
     /// enumerate all devices and allocate bars.
-    pub fn enumerate(&mut self, range: Option<Range<usize>>) -> PciIterator<'_> {
+    pub fn enumerate(
+        &mut self,
+        range: Option<Range<usize>>,
+    ) -> impl Iterator<Item = Endpoint> + '_ {
         self.__enumerate(range, true)
     }
 
@@ -63,20 +66,11 @@ impl RootComplex {
     pub fn enumerate_keep_bar(&mut self, range: Option<Range<usize>>) -> PciIterator<'_> {
         self.__enumerate(range, false)
     }
-
-    pub fn read_config(&self, address: PciAddress, offset: u16) -> u32 {
-        // PcieController internally manages mutability; see its UnsafeCell usage
-        unsafe { self.controller.read(address, offset) }
-    }
-
-    pub fn write_config(&mut self, address: PciAddress, offset: u16, value: u32) {
-        unsafe { self.controller.write(address, offset, value) }
-    }
 }
 
 impl ConfigRegionAccess for RootComplex {
     unsafe fn read(&self, address: pci_types::PciAddress, offset: u16) -> u32 {
-        self.read_config(address, offset)
+        self.controller.read(address, offset)
     }
 
     unsafe fn write(&self, address: pci_types::PciAddress, offset: u16, value: u32) {
@@ -86,7 +80,7 @@ impl ConfigRegionAccess for RootComplex {
 
 impl ConfigRegionAccess for &mut RootComplex {
     unsafe fn read(&self, address: pci_types::PciAddress, offset: u16) -> u32 {
-        self.read_config(address, offset)
+        self.controller.read(address, offset)
     }
 
     unsafe fn write(&self, address: pci_types::PciAddress, offset: u16, value: u32) {

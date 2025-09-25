@@ -74,7 +74,6 @@ mod tests {
                     println!("    BAR{}: {:#x?}", i, bar);
                 }
             }
-            // println!("  IRQ: {:?}", ep.interrupt_line());
             for cap in ep.capabilities() {
                 println!("  {:?}", cap);
             }
