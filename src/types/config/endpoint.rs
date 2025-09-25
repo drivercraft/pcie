@@ -9,7 +9,7 @@ use pci_types::{
     EndpointHeader, PciAddress,
 };
 
-use crate::{BarHeader, BarVec, PcieController, SimpleBarAllocator};
+use crate::{chip::PcieController, BarHeader, BarVec, SimpleBarAllocator};
 
 pub struct Endpoint {
     base: super::PciHeaderBase,

@@ -14,7 +14,8 @@ use pci_types::{
     CommandRegister, ConfigRegionAccess, HeaderType, PciAddress, PciHeader, StatusRegister,
 };
 
-use crate::PcieController;
+use crate::chip::PcieController;
+
 
 #[derive(Debug)]
 pub enum PciConfigSpace {

@@ -13,7 +13,7 @@ pub mod err;
 mod root;
 mod types;
 
-pub use chip::{PcieController, PcieGeneric};
+pub use chip::{Controller, PcieGeneric};
 
 pub use bar_alloc::*;
 pub use root::RootComplex;

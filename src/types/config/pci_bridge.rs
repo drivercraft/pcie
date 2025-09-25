@@ -3,7 +3,7 @@ use core::{fmt::Debug, ops::Deref};
 use bit_field::BitField;
 use pci_types::{ConfigRegionAccess, PciPciBridgeHeader};
 
-use crate::PcieController;
+use crate::chip::PcieController;
 
 use super::PciHeaderBase;
 
