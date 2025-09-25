@@ -1,39 +1,50 @@
 use alloc::vec::Vec;
-use log::error;
-use pci_types::{CommandRegister, ConfigRegionAccess, PciHeader, StatusRegister};
+use pci_types::ConfigRegionAccess;
 
-use crate::{
-    BarAllocator, BarHeader, CardBusBridge, Chip, Endpoint, Header, PciAddress, PciPciBridge,
-    SimpleBarAllocator, Unknown,
-};
-use core::{fmt::Display, hint::spin_loop, ops::Range, ptr::NonNull};
+use crate::chip::PcieController;
+use crate::{Endpoint, PciConfigSpace, PciHeaderBase, PciPciBridge};
+use crate::{PciAddress, PciSpace32, PciSpace64, SimpleBarAllocator};
+use core::{hint::spin_loop, ops::Range};
 
 const MAX_DEVICE: u8 = 31;
 const MAX_FUNCTION: u8 = 7;
 
-pub struct RootComplex<C: Chip> {
-    pub(crate) chip: C,
-    pub(crate) mmio_base: NonNull<u8>,
+pub struct RootComplex {
+    pub(crate) controller: PcieController,
+    pub(crate) allocator: Option<SimpleBarAllocator>,
 }
 
-impl<C> RootComplex<C>
-where
-    C: Chip,
-{
-    pub fn new_with_chip(mmio_base: NonNull<u8>, chip: C) -> Self {
-        Self { chip, mmio_base }
+impl RootComplex {
+    /// Create a RootComplex with optional pre-configured BAR allocation spaces.
+    /// If `space32`/`space64` provided, an internal SimpleBarAllocator will be created.
+    pub fn new(controller: PcieController) -> Self {
+        Self {
+            controller,
+            allocator: None,
+        }
     }
 
-    fn __enumerate<A: BarAllocator>(
-        &mut self,
-        range: Option<Range<usize>>,
-        bar_alloc: Option<A>,
-    ) -> PciIterator<'_, C, A> {
+    pub fn new_generic(mmio_base: core::ptr::NonNull<u8>) -> Self {
+        let ctrl = PcieController::new(crate::chip::PcieGeneric::new(mmio_base));
+        Self::new(ctrl)
+    }
+
+    pub fn set_space32(&mut self, space: PciSpace32) {
+        let a = self.allocator.get_or_insert_with(Default::default);
+        a.set_mem32(space).unwrap();
+    }
+
+    pub fn set_space64(&mut self, space: PciSpace64) {
+        let a = self.allocator.get_or_insert_with(Default::default);
+        a.set_mem64(space).unwrap();
+    }
+
+    fn __enumerate(&mut self, range: Option<Range<usize>>, do_allocate: bool) -> PciIterator<'_> {
         let range = range.unwrap_or_else(|| 0..0x100);
 
         PciIterator {
             root: self,
-            allocator: bar_alloc,
+            do_allocate,
             segment: 0,
             bus_max: (range.end - 1) as _,
             function: 0,
@@ -44,56 +55,44 @@ where
     }
 
     /// enumerate all devices and allocate bars.
-    pub fn enumerate<A: BarAllocator>(
+    pub fn enumerate(
         &mut self,
         range: Option<Range<usize>>,
-        bar_alloc: Option<A>,
-    ) -> PciIterator<'_, C, A> {
-        self.__enumerate(range, bar_alloc)
+    ) -> impl Iterator<Item = Endpoint> + '_ {
+        self.__enumerate(range, true)
     }
 
     /// enumerate all devices without modify bar.
-    pub fn enumerate_keep_bar(
-        &mut self,
-        range: Option<Range<usize>>,
-    ) -> PciIterator<'_, C, SimpleBarAllocator> {
-        self.__enumerate(range, None)
-    }
-
-    pub fn read_config(&self, address: PciAddress, offset: u16) -> u32 {
-        unsafe { self.chip.read(self.mmio_base, address, offset) }
-    }
-
-    pub fn write_config(&mut self, address: PciAddress, offset: u16, value: u32) {
-        unsafe { self.chip.write(self.mmio_base, address, offset, value) }
+    pub fn enumerate_keep_bar(&mut self, range: Option<Range<usize>>) -> PciIterator<'_> {
+        self.__enumerate(range, false)
     }
 }
 
-impl<C: Chip> ConfigRegionAccess for RootComplex<C> {
+impl ConfigRegionAccess for RootComplex {
     unsafe fn read(&self, address: pci_types::PciAddress, offset: u16) -> u32 {
-        self.read_config(address, offset)
+        self.controller.read(address, offset)
     }
 
     unsafe fn write(&self, address: pci_types::PciAddress, offset: u16, value: u32) {
-        self.chip.write(self.mmio_base, address, offset, value);
+        self.controller.write(address, offset, value);
     }
 }
 
-impl<C: Chip> ConfigRegionAccess for &mut RootComplex<C> {
+impl ConfigRegionAccess for &mut RootComplex {
     unsafe fn read(&self, address: pci_types::PciAddress, offset: u16) -> u32 {
-        self.read_config(address, offset)
+        self.controller.read(address, offset)
     }
 
     unsafe fn write(&self, address: pci_types::PciAddress, offset: u16, value: u32) {
-        self.chip.write(self.mmio_base, address, offset, value);
+        self.controller.write(address, offset, value);
     }
 }
 
-pub struct PciIterator<'a, C: Chip, A: BarAllocator> {
+pub struct PciIterator<'a> {
     /// This must only be used to read read-only fields, and must not be exposed outside this
     /// module, because it uses the same CAM as the main `PciRoot` instance.
-    root: &'a mut RootComplex<C>,
-    allocator: Option<A>,
+    root: &'a mut RootComplex,
+    do_allocate: bool,
     segment: u16,
     stack: Vec<Bridge>,
     bus_max: u8,
@@ -102,20 +101,26 @@ pub struct PciIterator<'a, C: Chip, A: BarAllocator> {
     is_finish: bool,
 }
 
-impl<'a, C: Chip, A: BarAllocator> Iterator for PciIterator<'a, C, A> {
-    type Item = EnumElem<'a, C>;
+impl<'a> Iterator for PciIterator<'a> {
+    type Item = Endpoint;
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.is_finish {
             if let Some(value) = self.get_current_valid() {
-                self.next(match &value {
-                    Header::PciPciBridge(bridge) => Some(bridge),
-                    _ => None,
-                });
-                return Some(EnumElem {
-                    root: unsafe { &mut *(self.root as *mut RootComplex<C>) },
-                    header: value,
-                });
+                match value {
+                    PciConfigSpace::PciPciBridge(pci_pci_bridge) => {
+                        self.next(Some(pci_pci_bridge));
+                    }
+                    PciConfigSpace::Endpoint(ep) => {
+                        let item = ep;
+                        self.next(None);
+                        return Some(item);
+                    }
+                    PciConfigSpace::CardBusBridge(_) | PciConfigSpace::Unknown(_) => {
+                        // Not handled for iteration; skip
+                        self.next(None);
+                    }
+                }
             } else {
                 self.next(None);
             }
@@ -124,181 +129,55 @@ impl<'a, C: Chip, A: BarAllocator> Iterator for PciIterator<'a, C, A> {
     }
 }
 
-pub struct EnumElem<'a, C: Chip> {
-    pub root: &'a mut RootComplex<C>,
-    pub header: Header,
-}
-
-impl<C: Chip> Display for EnumElem<'_, C> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", self.header)
-    }
-}
-
-impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
-    fn get_current_valid(&mut self) -> Option<Header> {
+impl PciIterator<'_> {
+    fn get_current_valid(&mut self) -> Option<PciConfigSpace> {
         let address = self.address();
+        let header_base = PciHeaderBase::new(self.root.controller.clone(), address)?;
+        self.is_mulitple_function = header_base.has_multiple_functions();
 
-        let pci_header = PciHeader::new(address);
-        let access = &self.root;
-        let (vendor_id, device_id) = pci_header.id(access);
-        if vendor_id == 0xffff {
-            return None;
-        }
-
-        let status = pci_header.status(access);
-        let command = pci_header.command(access);
-        let has_multiple_functions = pci_header.has_multiple_functions(access);
-        let (device_revision, base_class, sub_class, interface) =
-            pci_header.revision_and_class(access);
-
-        self.is_mulitple_function = has_multiple_functions;
-
-        Some(match pci_header.header_type(access) {
+        match header_base.header_type() {
             pci_types::HeaderType::Endpoint => {
-                let access = &self.root;
-                let mut ep = pci_types::EndpointHeader::from_header(pci_header, access).unwrap();
-
-                let mut bar = ep.parse_bar(6, access);
-                let (interrupt_pin, interrupt_line) = ep.interrupt(access);
-                let capability_pointer = ep.capability_pointer(access);
-                let capabilities = ep.capabilities(access).collect::<Vec<_>>();
-
-                if let Some(a) = &mut self.allocator {
-                    ep.update_command(access, |mut cmd| {
-                        cmd.remove(CommandRegister::IO_ENABLE);
-                        cmd.remove(CommandRegister::MEMORY_ENABLE);
-                        cmd
-                    });
-
-                    match &bar {
-                        crate::BarVec::Memory32(bar_vec) => {
-                            let new_bar_vec = bar_vec
-                                .iter()
-                                .map(|old| {
-                                    old.clone().map(|ref b| a.alloc_memory32(b.size).unwrap())
-                                })
-                                .collect::<Vec<_>>();
-
-                            for (i, bar) in new_bar_vec.into_iter().enumerate() {
-                                if let Some(value) = bar {
-                                    bar_vec.set(i, value, access).unwrap();
-                                }
-                            }
-                        }
-                        crate::BarVec::Memory64(bar_vec) => {
-                            let new_bar_vec = bar_vec
-                                .iter()
-                                .map(|old| {
-                                    old.clone().map(|ref b| {
-                                        if b.address > 0 && b.address < u32::MAX as u64 {
-                                            a.alloc_memory32(b.size as u32).unwrap() as u64
-                                        } else {
-                                            a.alloc_memory64(b.size).unwrap()
-                                        }
-                                    })
-                                })
-                                .collect::<Vec<_>>();
-
-                            for (i, bar) in new_bar_vec.into_iter().enumerate() {
-                                if let Some(value) = bar {
-                                    bar_vec
-                                        .set(i, value, access)
-                                        .inspect_err(|e| error!("{:?}", e))
-                                        .unwrap();
-                                }
-                            }
-                        }
-                        crate::BarVec::Io(_bar_vec_t) => {}
-                    }
-
-                    bar = ep.parse_bar(6, access);
-                }
-
-                Header::Endpoint(Endpoint {
-                    address,
-                    vendor_id,
-                    device_id,
-                    command,
-                    status,
-                    has_multiple_functions,
-                    bar,
-                    device_revision,
-                    base_class,
-                    sub_class,
-                    interface,
-                    interrupt_pin,
-                    interrupt_line,
-                    capability_pointer,
-                    capabilities,
-                })
+                let allocator = if self.do_allocate {
+                    self.root.allocator.as_mut()
+                } else {
+                    None
+                };
+                let ep = Endpoint::new(header_base, allocator);
+                Some(PciConfigSpace::Endpoint(ep))
             }
             pci_types::HeaderType::PciPciBridge => {
-                // let bridge = PciPciBridgeHeader::from_header(pci_header, access).unwrap();
-                // let want_primary_bus = bridge.primary_bus_number(access);
-                // let want_secondary_bus = bridge.secondary_bus_number(access);
-
+                let mut bridge = PciPciBridge::new(header_base);
                 let primary_bus = address.bus();
                 let secondary_bus;
 
                 if let Some(parent) = self.stack.last_mut() {
-                    if parent.header.subordinate_bus == self.bus_max {
+                    if parent.bridge.subordinate_bus_number() == self.bus_max {
                         return None;
                     }
 
-                    secondary_bus = parent.header.subordinate_bus + 1;
+                    secondary_bus = parent.bridge.subordinate_bus_number() + 1;
                 } else {
                     panic!("no parent");
                 }
                 let subordinate_bus = secondary_bus;
+                bridge.update_bus_number(|mut bus| {
+                    bus.primary = primary_bus;
+                    bus.secondary = secondary_bus;
+                    bus.subordinate = subordinate_bus;
+                    bus
+                });
 
-                Header::PciPciBridge(PciPciBridge {
-                    address,
-                    vendor_id,
-                    device_id,
-                    command,
-                    status,
-                    has_multiple_functions,
-                    secondary_bus,
-                    subordinate_bus,
-                    primary_bus,
-                    device_revision,
-                    base_class,
-                    sub_class,
-                    interface,
-                })
+                Some(PciConfigSpace::PciPciBridge(bridge))
             }
-            pci_types::HeaderType::Unknown(u) => Header::Unknown(Unknown {
-                address,
-                vendor_id,
-                device_id,
-                command,
-                status,
-                has_multiple_functions,
-                kind: u,
-                device_revision,
-                base_class,
-                sub_class,
-                interface,
-            }),
-            _ => Header::CardBusBridge(CardBusBridge {
-                address,
-                vendor_id,
-                device_id,
-                command,
-                status,
-                has_multiple_functions,
-                device_revision,
-                base_class,
-                sub_class,
-                interface,
-            }),
-        })
+            pci_types::HeaderType::CardBusBridge => todo!(),
+            pci_types::HeaderType::Unknown(_) => todo!(),
+            _ => unreachable!(),
+        }
     }
 
     fn address(&self) -> PciAddress {
         let parent = self.stack.last().unwrap();
-        let bus = parent.header.secondary_bus;
+        let bus = parent.bridge.secondary_bus_number();
         let device = parent.device;
 
         PciAddress::new(self.segment, bus, device, self.function)
@@ -325,9 +204,9 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
         if let Some(parent) = self.stack.last_mut() {
             if parent.device == MAX_DEVICE {
                 if let Some(parent) = self.stack.pop() {
-                    self.is_finish = parent.header.subordinate_bus == self.bus_max;
+                    self.is_finish = parent.bridge.subordinate_bus_number() == self.bus_max;
 
-                    parent.header.sync_bus_number(&self.root);
+                    // parent.header.sync_bus_number(&self.root);
                     self.function = 0;
                     return true;
                 } else {
@@ -343,16 +222,18 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
         false
     }
 
-    fn next(&mut self, current_bridge: Option<&PciPciBridge>) {
+    fn next(&mut self, current_bridge: Option<PciPciBridge>) {
         if let Some(bridge) = current_bridge {
             for parent in &mut self.stack {
-                parent.header.subordinate_bus += 1;
+                // parent.header.subordinate_bus += 1;
+
+                parent.bridge.update_bus_number(|mut bus| {
+                    bus.subordinate += 1;
+                    bus
+                });
             }
 
-            self.stack.push(Bridge {
-                header: bridge.clone(),
-                device: 0,
-            });
+            self.stack.push(Bridge { bridge, device: 0 });
 
             self.function = 0;
             return;
@@ -367,29 +248,15 @@ impl<C: Chip, A: BarAllocator> PciIterator<'_, C, A> {
 }
 
 struct Bridge {
-    header: PciPciBridge,
+    bridge: PciPciBridge,
     device: u8,
 }
 
 impl Bridge {
     fn root(bus_start: u8) -> Self {
-        Bridge {
-            header: PciPciBridge {
-                address: PciAddress::new(0, 0, 0, 0),
-                vendor_id: 0,
-                device_id: 0,
-                command: CommandRegister::empty(),
-                status: StatusRegister::new(0),
-                has_multiple_functions: true,
-                primary_bus: bus_start,
-                secondary_bus: bus_start,
-                subordinate_bus: bus_start,
-                device_revision: 0,
-                base_class: 0,
-                sub_class: 0,
-                interface: 0,
-            },
-            device: 0,
+        Self {
+            bridge: PciPciBridge::root(),
+            device: bus_start,
         }
     }
 }

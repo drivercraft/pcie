@@ -1,9 +1,9 @@
 use core::{fmt::Debug, ops::Index};
 
 use alloc::vec::Vec;
-use pci_types::{Bar, BarWriteError, EndpointHeader, HeaderType, PciAddress, PciHeader};
-
-use crate::{Chip, RootComplex};
+use pci_types::{
+    Bar, BarWriteError, ConfigRegionAccess, EndpointHeader, HeaderType, PciAddress, PciHeader,
+};
 
 #[derive(Clone)]
 pub enum BarVec {
@@ -15,9 +15,9 @@ pub enum BarVec {
 impl Debug for BarVec {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Memory32(arg0) => write!(f, "{:?}", arg0),
-            Self::Memory64(arg0) => write!(f, "{:?}", arg0),
-            Self::Io(arg0) => write!(f, "{:?}", arg0),
+            Self::Memory32(arg0) => write!(f, "{arg0:?}"),
+            Self::Memory64(arg0) => write!(f, "{arg0:?}"),
+            Self::Io(arg0) => write!(f, "{arg0:?}"),
         }
     }
 }
@@ -42,13 +42,13 @@ pub struct BarIO {
 }
 
 pub(crate) trait BarHeader: Sized {
-    fn read_bar<C: Chip>(&self, slot: usize, access: &RootComplex<C>) -> Option<Bar>;
+    fn read_bar<A: ConfigRegionAccess>(&self, slot: usize, access: &A) -> Option<Bar>;
 
     fn address(&self) -> PciAddress;
 
     fn header_type(&self) -> HeaderType;
 
-    fn parse_bar<C: Chip>(&self, slot_size: usize, access: &RootComplex<C>) -> BarVec {
+    fn parse_bar<A: ConfigRegionAccess>(&self, slot_size: usize, access: &A) -> BarVec {
         let bar0 = match self.read_bar(0, access) {
             Some(bar0) => bar0,
             None => {
@@ -178,7 +178,7 @@ impl<T: Debug> Debug for BarVecT<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         for (i, bar) in self.data.iter().enumerate() {
             if let Some(bar) = bar {
-                writeln!(f, "BAR{}: {:?}", i, bar)?;
+                writeln!(f, "BAR{i}: {bar:?}")?;
             }
         }
         Ok(())
@@ -186,11 +186,11 @@ impl<T: Debug> Debug for BarVecT<T> {
 }
 
 impl BarVecT<Bar32> {
-    pub(crate) fn set<C: Chip>(
+    pub(crate) fn set<A: ConfigRegionAccess>(
         &self,
         index: usize,
         value: u32,
-        access: &RootComplex<C>,
+        access: &A,
     ) -> core::result::Result<(), BarWriteError> {
         let header = PciHeader::new(self.address);
         match self.header_type {
@@ -208,11 +208,11 @@ impl BarVecT<Bar32> {
 }
 
 impl BarVecT<Bar64> {
-    pub(crate) fn set<C: Chip>(
+    pub(crate) fn set<A: ConfigRegionAccess>(
         &self,
         index: usize,
         value: u64,
-        access: &RootComplex<C>,
+        access: &A,
     ) -> core::result::Result<(), BarWriteError> {
         let header = PciHeader::new(self.address);
         match self.header_type {
@@ -240,5 +240,9 @@ impl<T> Index<usize> for BarVecT<T> {
 impl<T> BarVecT<T> {
     pub fn iter(&self) -> impl Iterator<Item = &Option<T>> {
         self.data.iter()
+    }
+
+    pub fn get(&self, index: usize) -> Option<&T> {
+        self.data.get(index).and_then(|v| v.as_ref())
     }
 }

@@ -14,7 +14,7 @@ mod tests {
         println,
     };
     use log::info;
-    use pcie::{RootComplexGeneric, SimpleBarAllocator};
+    use pcie::{CommandRegister, PciSpace32, PciSpace64, RootComplex};
 
     #[test]
     fn test_iter() {
@@ -34,37 +34,61 @@ mod tests {
 
         println!("pcie: {}", pcie.node.name);
 
-        let mut bar_alloc = SimpleBarAllocator::default();
-
         for reg in pcie.node.reg().unwrap() {
             println!("pcie reg: {:#x}", reg.address);
             pcie_regs.push(iomap((reg.address as usize).into(), reg.size.unwrap()));
-        }
-
-        for range in pcie.ranges().unwrap() {
-            info!("{range:?}");
-            match range.space {
-                PciSpace::Memory32 => bar_alloc.set_mem32(range.cpu_address as _, range.size as _),
-                PciSpace::Memory64 => bar_alloc.set_mem64(range.cpu_address, range.size),
-                _ => {}
-            }
         }
 
         let base_vaddr = pcie_regs[0];
 
         info!("Init PCIE @{base_vaddr:?}");
 
-        let mut root = RootComplexGeneric::new(base_vaddr);
+        let mut root = RootComplex::new_generic(base_vaddr);
 
-        for header in root.enumerate(None, Some(bar_alloc)) {
-            println!("{}", header);
-        }
-
-        for header in root.enumerate_keep_bar(None) {
-            if let pcie::Header::Endpoint(endpoint) = header.header {
-                endpoint.update_command(header.root, |cmd| cmd);
+        for range in pcie.ranges().unwrap() {
+            info!("{range:?}");
+            match range.space {
+                PciSpace::Memory32 => {
+                    root.set_space32(PciSpace32 {
+                        address: range.cpu_address as u32,
+                        size: range.size as _,
+                        prefetchable: range.prefetchable,
+                    });
+                }
+                PciSpace::Memory64 => {
+                    root.set_space64(PciSpace64 {
+                        address: range.cpu_address,
+                        size: range.size as _,
+                        prefetchable: range.prefetchable,
+                    });
+                }
+                _ => {}
             }
         }
+
+        for mut ep in root.enumerate(None) {
+            println!("{}", ep);
+            println!("  BARs:");
+            for i in 0..6 {
+                if let Some(bar) = ep.bar(i) {
+                    println!("    BAR{}: {:#x?}", i, bar);
+                }
+            }
+            for cap in ep.capabilities() {
+                println!("  {:?}", cap);
+            }
+
+            ep.update_command(|mut cmd| {
+                cmd.insert(CommandRegister::MEMORY_ENABLE);
+                cmd
+            });
+        }
+
+        // for header in root.enumerate_keep_bar(None) {
+        //     // if let pcie::Header::Endpoint(endpoint) = header.header {
+        //     // endpoint.update_command( header.root, |cmd| cmd);
+        //     // }
+        // }
 
         println!("test passed!");
     }
