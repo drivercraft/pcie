@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use pci_types::ConfigRegionAccess;
 
 use crate::chip::PcieController;
-use crate::{Endpoint, PciConfigSpace, PciHeaderBase, PciPciBridge};
+use crate::{Controller, Endpoint, PciConfigSpace, PciHeaderBase, PciPciBridge};
 use crate::{PciAddress, PciSpace32, PciSpace64, SimpleBarAllocator};
 use core::{hint::spin_loop, ops::Range};
 
@@ -17,7 +17,12 @@ pub struct RootComplex {
 impl RootComplex {
     /// Create a RootComplex with optional pre-configured BAR allocation spaces.
     /// If `space32`/`space64` provided, an internal SimpleBarAllocator will be created.
-    pub fn new(controller: PcieController) -> Self {
+    pub fn new(controller: impl Controller + 'static) -> Self {
+        let ctrl = PcieController::new(controller);
+        Self::_new(ctrl)
+    }
+
+    fn _new(controller: PcieController) -> Self {
         Self {
             controller,
             allocator: None,
@@ -26,7 +31,7 @@ impl RootComplex {
 
     pub fn new_generic(mmio_base: core::ptr::NonNull<u8>) -> Self {
         let ctrl = PcieController::new(crate::chip::PcieGeneric::new(mmio_base));
-        Self::new(ctrl)
+        Self::_new(ctrl)
     }
 
     pub fn set_space32(&mut self, space: PciSpace32) {
