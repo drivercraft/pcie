@@ -1,6 +1,11 @@
-use core::{fmt::Debug, ops::Deref};
+use core::{
+    fmt::{Debug, Display},
+    ops::Deref,
+};
 
-use pci_types::{Bar, CommandRegister, ConfigRegionAccess, EndpointHeader, PciAddress};
+use pci_types::{
+    device_type::DeviceType, Bar, CommandRegister, ConfigRegionAccess, EndpointHeader, PciAddress,
+};
 
 use crate::{BarHeader, BarVec, SimpleBarAllocator};
 
@@ -21,6 +26,11 @@ impl Endpoint {
             s.realloc_bar(alloc).unwrap();
         }
         s
+    }
+
+    pub fn device_type(&self) -> DeviceType {
+        let class_info = self.base.revision_and_class();
+        DeviceType::from((class_info.base_class, class_info.sub_class))
     }
 
     pub fn bars(&self) -> BarVec {
@@ -125,5 +135,28 @@ impl Debug for Endpoint {
             .field("base", &self.base)
             .field("bars", &self.bars())
             .finish()
+    }
+}
+
+impl Display for Endpoint {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let address = self.base.address();
+        let class_info = self.base.revision_and_class();
+        let device_type = self.device_type();
+        let class_name = format!("{device_type:?}");
+
+        write!(
+            f,
+            "{:04x}:{:02x}:{:02x}.{} {:<24} {:04x}:{:04x} (rev {:02x}, prog-if {:02x})",
+            address.segment(),
+            address.bus(),
+            address.device(),
+            address.function(),
+            class_name,
+            self.base.vendor_id(),
+            self.base.device_id(),
+            class_info.revision_id,
+            class_info.interface,
+        )
     }
 }

@@ -95,7 +95,7 @@ impl Deref for PciPciBridge {
     type Target = PciHeaderBase;
 
     fn deref(&self) -> &Self::Target {
-        &self.base.as_ref().expect("Not a root bridge")
+        self.base.as_ref().expect("Not a root bridge")
     }
 }
 

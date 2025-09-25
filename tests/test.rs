@@ -66,8 +66,8 @@ mod tests {
             }
         }
 
-        for header in root.enumerate(None) {
-            println!("{:?}", header);
+        for ep in root.enumerate(None) {
+            println!("{}", ep);
         }
 
         for  header in root.enumerate_keep_bar(None) {

@@ -1,13 +1,9 @@
 use alloc::vec::Vec;
-use log::error;
-use pci_types::{CommandRegister, ConfigRegionAccess, PciHeader, StatusRegister};
+use pci_types::ConfigRegionAccess;
 
 use crate::chip::PcieController;
-use crate::config::{self, BusNumber, PciConfigSpace, PciHeaderBase};
-use crate::{
-    types, BarHeader, CardBusBridge, Endpoint, Header, PciAddress, PciPciBridge, PciSpace32,
-    PciSpace64, SimpleBarAllocator, Unknown,
-};
+use crate::config::{self, Endpoint, PciConfigSpace, PciHeaderBase};
+use crate::{types, PciAddress, PciSpace32, PciSpace64, SimpleBarAllocator};
 use core::{hint::spin_loop, ops::Range};
 
 const MAX_DEVICE: u8 = 31;
@@ -112,12 +108,21 @@ pub struct PciIterator<'a> {
 }
 
 impl<'a> Iterator for PciIterator<'a> {
-    type Item = PciConfigSpace;
+    type Item = Endpoint;
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.is_finish {
             if let Some(value) = self.get_current_valid() {
-                return Some(value);
+                match value {
+                    PciConfigSpace::PciPciBridge(pci_pci_bridge) => {
+                        self.next(Some(pci_pci_bridge));
+                    }
+                    PciConfigSpace::Endpoint(ep) => {
+                        let item = ep;
+                        self.next(None);
+                        return Some(item);
+                    }
+                }
             } else {
                 self.next(None);
             }
@@ -134,7 +139,12 @@ impl PciIterator<'_> {
 
         match header_base.header_type() {
             pci_types::HeaderType::Endpoint => {
-                let ep = types::config::Endpoint::new(header_base, self.root.allocator.as_mut());
+                let allocator = if self.do_allocate {
+                    self.root.allocator.as_mut()
+                } else {
+                    None
+                };
+                let ep = types::config::Endpoint::new(header_base, allocator);
                 Some(PciConfigSpace::Endpoint(ep))
             }
             pci_types::HeaderType::PciPciBridge => {

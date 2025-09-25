@@ -1,6 +1,4 @@
-use core::{fmt::Debug, ops::Deref};
-
- 
+use core::fmt::Debug;
 
 mod card_bridge;
 mod endpoint;
@@ -11,43 +9,18 @@ pub use endpoint::Endpoint;
 pub use pci_bridge::*;
 use pci_types::{CommandRegister, HeaderType, PciAddress, PciHeader, StatusRegister};
 
-use crate::PcieController;
+use crate::{
+    config::{card_bridge::CardBusBridge, unknown::Unknown},
+    PcieController,
+};
 
-// #[enum_dispatch]
 #[derive(Debug)]
 pub enum PciConfigSpace {
     PciPciBridge(PciPciBridge),
     Endpoint(Endpoint),
-    // CardBusBridge(CardBusBridge),
-    // Unknown(Unknown),
+    CardBusBridge(CardBusBridge),
+    Unknown(Unknown),
 }
-
-impl PciConfigSpace {
-    // pub(crate) fn new(root: PcieController, header: PciHeader) -> Self {
-
-    // }
-}
-
-impl Deref for PciConfigSpace {
-    type Target = PciHeaderBase;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            PciConfigSpace::PciPciBridge(v) => {
-                todo!()
-            }
-            PciConfigSpace::Endpoint(v) => &v,
-            // PciConfigSpace::CardBusBridge(v) => &v.base,
-            // PciConfigSpace::Unknown(v) => &v.base,
-        }
-    }
-}
-
-// #[enum_dispatch(PciConfigSpace)]
-// pub trait TPciConfigSpace {
-//     fn vendor_id(&self) -> u16;
-//     fn device_id(&self) -> u16;
-// }
 
 pub struct PciHeaderBase {
     vid: u16,
@@ -112,6 +85,14 @@ impl PciHeaderBase {
             sub_class,
             interface,
         }
+    }
+
+    pub fn vendor_id(&self) -> u16 {
+        self.vid
+    }
+
+    pub fn device_id(&self) -> u16 {
+        self.did
     }
 }
 
